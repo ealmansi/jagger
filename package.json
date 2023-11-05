@@ -2,7 +2,6 @@
   "name": "@ealmansi/jagger",
   "version": "0.1.3",
   "description": "WIP",
-  "type": "module",
   "files": [
     "./js"
   ],
