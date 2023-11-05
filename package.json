@@ -9,12 +9,8 @@
   "main": "./js/src/index.js",
   "typings": "./js/src/index.d.ts",
   "exports": {
-    ".": {
-      "import": "./js/src/index.js"
-    },
-    "./transform": {
-      "import": "./js/src/transform.js"
-    }
+    ".": "./js/src/index.js",
+    "./transform": "./js/src/transform.js"
   },
   "repository": {
     "type": "git",
