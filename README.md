@@ -10,12 +10,12 @@ npm add -D ts-patch @ealmansi/jagger
 
 2. Configure prepare script:
 
-```json
+```json5
 // package.json
 {
-  "scripts": {
-    "prepare": "ts-patch install -s"
-  }
+  scripts: {
+    prepare: "ts-patch install -s",
+  },
 }
 ```
 
@@ -27,16 +27,16 @@ npm install
 
 4. Configure TypeScript plugin:
 
-```json
+```json5
 // tsconfig.json
 {
-  "compilerOptions": {
-    "plugins": [
+  compilerOptions: {
+    plugins: [
       {
-        "transform": "@ealmansi/jagger/transform"
-      }
-    ]
-  }
+        transform: "@ealmansi/jagger/transform",
+      },
+    ],
+  },
 }
 ```
 
