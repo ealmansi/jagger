@@ -10,7 +10,7 @@ export class Jagger {
       [
         "Jagger has not been configured correctly.",
         "Please, visit https://github.com/ealmansi/jagger.",
-      ].join(" ")
+      ].join(" "),
     );
   }
 }

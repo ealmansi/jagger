@@ -9,7 +9,12 @@
   "main": "./js/src/index.js",
   "typings": "./js/src/index.d.ts",
   "exports": {
-    "import": "./js/src/index.js"
+    ".": {
+      "import": "./js/src/index.js"
+    },
+    "./transform": {
+      "import": "./js/src/transform.js"
+    }
   },
   "repository": {
     "type": "git",
@@ -28,12 +33,14 @@
     "node": ">=18.15"
   },
   "devDependencies": {
+    "prettier": "^3.0.3",
     "rimraf": "^5.0.5",
     "typescript": "^5.2.2"
   },
   "scripts": {
     "test": "false",
     "clean": "rimraf js",
+    "format": "prettier --write ./ts",
     "build": "tsc"
   }
 }
