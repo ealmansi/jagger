@@ -62,8 +62,8 @@ class App {
 }
 
 class AppModule {
-  protected provideLogger = Jagger.provide<Logger>;
-  public provideApp = Jagger.provide<App>;
+  protected provideLogger = Jagger.provide(Logger);
+  public provideApp = Jagger.provide(App);
 }
 
 const app = new AppModule().provideApp();
