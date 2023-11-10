@@ -3,7 +3,7 @@
 ## TODO
 
 - Configurability
-- Singleton/Reusable
+- Reusable Providers
 - Optional Binding
 - Multibinding
 - Async Providers

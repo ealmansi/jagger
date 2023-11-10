@@ -131,34 +131,94 @@ export default (program: ts.Program) => {
                   propertyDeclaration.exclamationToken ??
                   undefined,
                 propertyDeclaration.type,
-                context.factory.createFunctionExpression(
-                  [],
-                  undefined,
-                  propertyDeclaration.name as ts.Identifier,
-                  [],
-                  [],
-                  undefined,
-                  context.factory.createBlock([
-                    context.factory.createReturnStatement(
-                      context.factory.createNewExpression(
-                        argument,
-                        [],
-                        argumentClassDeclarationConstructorDeclarationParametersTypesTypeNames.map(
-                          ({ escapedText }) =>
-                            context.factory.createCallExpression(
-                              context.factory.createPropertyAccessExpression(
-                                context.factory.createThis(),
-                                context.factory.createIdentifier(
-                                  "provide" + escapedText
-                                )
-                              ),
-                              undefined,
-                              []
+                context.factory.createCallExpression(
+                  context.factory.createParenthesizedExpression(
+                    context.factory.createFunctionExpression(
+                      undefined,
+                      undefined,
+                      context.factory.createIdentifier(
+                        (propertyDeclaration.name as ts.Identifier)
+                          .escapedText + "Factory"
+                      ),
+                      undefined,
+                      [],
+                      undefined,
+                      context.factory.createBlock(
+                        [
+                          context.factory.createVariableStatement(
+                            undefined,
+                            context.factory.createVariableDeclarationList(
+                              [
+                                context.factory.createVariableDeclaration(
+                                  context.factory.createIdentifier("instance"),
+                                  undefined,
+                                  undefined,
+                                  context.factory.createIdentifier("undefined")
+                                ),
+                              ],
+                              ts.NodeFlags.Let
                             )
-                        )
+                          ),
+                          context.factory.createReturnStatement(
+                            context.factory.createFunctionExpression(
+                              undefined,
+                              undefined,
+                              propertyDeclaration.name as ts.Identifier,
+                              undefined,
+                              [],
+                              undefined,
+                              context.factory.createBlock(
+                                [
+                                  context.factory.createExpressionStatement(
+                                    context.factory.createBinaryExpression(
+                                      context.factory.createIdentifier(
+                                        "instance"
+                                      ),
+                                      context.factory.createToken(
+                                        ts.SyntaxKind.EqualsToken
+                                      ),
+                                      context.factory.createBinaryExpression(
+                                        context.factory.createIdentifier(
+                                          "instance"
+                                        ),
+                                        context.factory.createToken(
+                                          ts.SyntaxKind.QuestionQuestionToken
+                                        ),
+                                        context.factory.createNewExpression(
+                                          argument,
+                                          [],
+                                          argumentClassDeclarationConstructorDeclarationParametersTypesTypeNames.map(
+                                            ({ escapedText }) =>
+                                              context.factory.createCallExpression(
+                                                context.factory.createPropertyAccessExpression(
+                                                  context.factory.createThis(),
+                                                  context.factory.createIdentifier(
+                                                    "provide" + escapedText
+                                                  )
+                                                ),
+                                                undefined,
+                                                []
+                                              )
+                                          )
+                                        )
+                                      )
+                                    )
+                                  ),
+                                  context.factory.createReturnStatement(
+                                    context.factory.createIdentifier("instance")
+                                  ),
+                                ],
+                                true
+                              )
+                            )
+                          ),
+                        ],
+                        true
                       )
-                    ),
-                  ])
+                    )
+                  ),
+                  undefined,
+                  []
                 )
               );
             }
