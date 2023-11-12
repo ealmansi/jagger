@@ -1,232 +1,422 @@
 import ts from "typescript";
-import { match } from "ts-pattern";
+import assert from "assert/strict";
 
 export default (program: ts.Program) => {
   return (context: ts.TransformationContext) => {
     return (sourceFile: ts.SourceFile) => {
-      const visitor = (node: ts.Node): ts.Node => {
-        const replacementNode = match<ts.Node, ts.Node | undefined>(node)
-          .with(
-            {
-              kind: ts.SyntaxKind.PropertyDeclaration,
-              name: {
-                kind: ts.SyntaxKind.Identifier,
-              },
-              initializer: {
-                kind: ts.SyntaxKind.CallExpression,
-                expression: {
-                  kind: ts.SyntaxKind.PropertyAccessExpression,
-                  expression: {
-                    kind: ts.SyntaxKind.Identifier,
-                    escapedText: "Jagger",
-                  },
-                  name: {
-                    kind: ts.SyntaxKind.Identifier,
-                    escapedText: "provide",
-                  },
-                },
-                arguments: [
-                  {
-                    kind: ts.SyntaxKind.Identifier,
-                  },
-                ],
-              },
-            },
-            (node) => {
-              const propertyDeclaration =
-                node as unknown as ts.PropertyDeclaration;
-              const typeChecker = program.getTypeChecker();
-              const argument = node.initializer.arguments[0] as ts.Identifier;
-              const argumentSymbol = typeChecker.getSymbolAtLocation(argument);
-              const argumentClassDeclaration = match<
-                ts.Symbol | undefined,
-                ts.ClassDeclaration | undefined
-              >(argumentSymbol)
-                .with(
-                  {
-                    declarations: [
-                      {
-                        kind: ts.SyntaxKind.ClassDeclaration,
-                      },
-                    ],
-                  },
-                  (argumentSymbol) =>
-                    argumentSymbol.declarations[0] as ts.ClassDeclaration
-                )
-                .with(
-                  {
-                    declarations: [
-                      {
-                        kind: ts.SyntaxKind.ImportSpecifier,
-                      },
-                    ],
-                  },
-                  (argumentSymbol) => {
-                    const typeChecker = program.getTypeChecker();
-                    const declaration = argumentSymbol
-                      .declarations[0] as ts.ImportSpecifier;
-                    const moduleSpecifierSymbol =
-                      typeChecker.getSymbolAtLocation(
-                        declaration.parent.parent.parent.moduleSpecifier
-                      );
-                    const exportSymbol = moduleSpecifierSymbol?.exports?.get(
-                      declaration.name.escapedText
-                    );
-                    return match(exportSymbol)
-                      .with(
-                        {
-                          valueDeclaration: {
-                            kind: ts.SyntaxKind.ClassDeclaration,
-                          },
-                        },
-                        (exportSymbol) =>
-                          exportSymbol.valueDeclaration as ts.ClassDeclaration
-                      )
-                      .otherwise(() => undefined);
-                  }
-                )
-                .otherwise(() => undefined);
-              if (argumentClassDeclaration === undefined) {
-                return undefined;
-              }
-              const argumentClassDeclarationConstructorDeclaration =
-                argumentClassDeclaration.members.find(
-                  ts.isConstructorDeclaration
-                );
-              if (
-                argumentClassDeclarationConstructorDeclaration === undefined
-              ) {
-                return undefined;
-              }
-              const argumentClassDeclarationConstructorDeclarationParameters =
-                argumentClassDeclarationConstructorDeclaration.parameters;
-              const argumentClassDeclarationConstructorDeclarationParametersTypes: ts.TypeReferenceNode[] =
-                [];
-              for (const {
-                type,
-              } of argumentClassDeclarationConstructorDeclarationParameters) {
-                if (!(type !== undefined && ts.isTypeReferenceNode(type))) {
-                  return undefined;
-                }
-                argumentClassDeclarationConstructorDeclarationParametersTypes.push(
-                  type
-                );
-              }
-              const argumentClassDeclarationConstructorDeclarationParametersTypesTypeNames: ts.Identifier[] =
-                [];
-              for (const {
-                typeName,
-              } of argumentClassDeclarationConstructorDeclarationParametersTypes) {
-                if (!ts.isIdentifier(typeName)) {
-                  return undefined;
-                }
-                argumentClassDeclarationConstructorDeclarationParametersTypesTypeNames.push(
-                  typeName
-                );
-              }
-              return context.factory.createPropertyDeclaration(
-                propertyDeclaration.modifiers,
-                propertyDeclaration.name,
-                propertyDeclaration.questionToken ??
-                  propertyDeclaration.exclamationToken ??
-                  undefined,
-                propertyDeclaration.type,
-                context.factory.createCallExpression(
-                  context.factory.createParenthesizedExpression(
-                    context.factory.createFunctionExpression(
-                      undefined,
-                      undefined,
-                      context.factory.createIdentifier(
-                        (propertyDeclaration.name as ts.Identifier)
-                          .escapedText + "Factory"
-                      ),
-                      undefined,
-                      [],
-                      undefined,
-                      context.factory.createBlock(
-                        [
-                          context.factory.createVariableStatement(
-                            undefined,
-                            context.factory.createVariableDeclarationList(
-                              [
-                                context.factory.createVariableDeclaration(
-                                  context.factory.createIdentifier("instance"),
-                                  undefined,
-                                  undefined,
-                                  context.factory.createIdentifier("undefined")
-                                ),
-                              ],
-                              ts.NodeFlags.Let
-                            )
-                          ),
-                          context.factory.createReturnStatement(
-                            context.factory.createFunctionExpression(
-                              undefined,
-                              undefined,
-                              propertyDeclaration.name as ts.Identifier,
-                              undefined,
-                              [],
-                              undefined,
-                              context.factory.createBlock(
-                                [
-                                  context.factory.createExpressionStatement(
-                                    context.factory.createBinaryExpression(
-                                      context.factory.createIdentifier(
-                                        "instance"
-                                      ),
-                                      context.factory.createToken(
-                                        ts.SyntaxKind.EqualsToken
-                                      ),
-                                      context.factory.createBinaryExpression(
-                                        context.factory.createIdentifier(
-                                          "instance"
-                                        ),
-                                        context.factory.createToken(
-                                          ts.SyntaxKind.QuestionQuestionToken
-                                        ),
-                                        context.factory.createNewExpression(
-                                          argument,
-                                          [],
-                                          argumentClassDeclarationConstructorDeclarationParametersTypesTypeNames.map(
-                                            ({ escapedText }) =>
-                                              context.factory.createCallExpression(
-                                                context.factory.createPropertyAccessExpression(
-                                                  context.factory.createThis(),
-                                                  context.factory.createIdentifier(
-                                                    "provide" + escapedText
-                                                  )
-                                                ),
-                                                undefined,
-                                                []
-                                              )
-                                          )
-                                        )
-                                      )
-                                    )
-                                  ),
-                                  context.factory.createReturnStatement(
-                                    context.factory.createIdentifier("instance")
-                                  ),
-                                ],
-                                true
-                              )
-                            )
-                          ),
-                        ],
-                        true
-                      )
-                    )
-                  ),
-                  undefined,
-                  []
-                )
-              );
-            }
-          )
-          .otherwise(() => undefined);
-        return replacementNode ?? ts.visitEachChild(node, visitor, context);
-      };
-      return ts.visitNode(sourceFile, visitor);
+      return ts.visitNode(
+        sourceFile,
+        createVisitor({ program, context, sourceFile }),
+      );
     };
   };
 };
+
+type Environment = {
+  program: ts.Program;
+  context: ts.TransformationContext;
+  sourceFile: ts.SourceFile;
+};
+
+function createVisitor(environment: Environment) {
+  return function visitor(node: ts.Node): ts.Node {
+    const { context } = environment;
+
+    if (
+      !(
+        ts.isCallExpression(node) &&
+        ts.isPropertyAccessExpression(node.expression) &&
+        ts.isIdentifier(node.expression.expression) &&
+        node.expression.expression.escapedText === "Jagger" &&
+        ts.isIdentifier(node.expression.name) &&
+        node.expression.name.escapedText === "provide"
+      )
+    ) {
+      return ts.visitEachChild(node, visitor, context);
+    }
+
+    assert.ok(
+      node.parent.parent &&
+        ts.isClassDeclaration(node.parent.parent) &&
+        node.parent.parent.name !== undefined,
+      [
+        "[Jagger]",
+        "Expected provider to be a property declaration",
+        "enclosed in a named class declaration.",
+      ].join(" "),
+    );
+
+    assert.ok(
+      node.parent &&
+        ts.isPropertyDeclaration(node.parent) &&
+        node.parent.initializer === node,
+      [
+        "[Jagger]",
+        "Expected provide expression to appear as",
+        "initializer within a property declaration.",
+      ].join(" "),
+    );
+
+    assert.ok(
+      node.arguments.length === 1 &&
+        node.arguments[0] !== undefined &&
+        ts.isIdentifier(node.arguments[0]),
+      [
+        "[Jagger]",
+        "Expected provide expression to have exactly",
+        "one identifier as argument.",
+      ].join(" "),
+    );
+
+    const classDeclaration = findClassDeclarationForIdentifier(
+      node.arguments[0],
+      environment,
+    );
+
+    assert.ok(
+      classDeclaration !== undefined,
+      [
+        "[Jagger]",
+        "Expected provide expression argument to have",
+        "an associated class declaration.",
+      ].join(" "),
+    );
+
+    const constructorDeclaration = classDeclaration.members.find(
+      ts.isConstructorDeclaration,
+    );
+
+    assert.ok(
+      constructorDeclaration !== undefined,
+      [
+        "[Jagger]",
+        "Expected provided expression argument to have",
+        "a constructor.",
+      ].join(" "),
+    );
+
+    return createProvider(
+      node.parent,
+      classDeclaration,
+      constructorDeclaration,
+      environment,
+    );
+  };
+}
+
+function createProvider(
+  propertyDeclaration: ts.PropertyDeclaration,
+  classDeclaration: ts.ClassDeclaration,
+  constructorDeclaration: ts.ConstructorDeclaration,
+  environment: Environment,
+): ts.Node {
+  const { context } = environment;
+  const { factory } = context;
+
+  assert.ok(
+    ts.isIdentifier(propertyDeclaration.name),
+    [
+      "[Jagger]",
+      "Expected provider to be a property declaration",
+      "named by an identifier.",
+    ].join(" "),
+  );
+
+  const providerName = propertyDeclaration.name.escapedText.toString();
+  const providerFactoryName = `${providerName}Factory`;
+
+  assert.ok(
+    classDeclaration.name !== undefined,
+    "[Jagger] Expected injected class to have a name.",
+  );
+
+  const argumentsArray = constructorDeclaration.parameters.map((parameter) =>
+    createProviderArgument(propertyDeclaration, parameter, environment),
+  );
+
+  return factory.createCallExpression(
+    factory.createParenthesizedExpression(
+      factory.createFunctionExpression(
+        [],
+        undefined,
+        providerFactoryName,
+        [],
+        [],
+        undefined,
+        factory.createBlock([
+          factory.createVariableStatement(
+            undefined,
+            factory.createVariableDeclarationList(
+              [
+                factory.createVariableDeclaration(
+                  factory.createIdentifier("instance"),
+                  undefined,
+                  undefined,
+                  factory.createIdentifier("undefined"),
+                ),
+              ],
+              ts.NodeFlags.Let,
+            ),
+          ),
+          factory.createReturnStatement(
+            factory.createFunctionExpression(
+              [],
+              undefined,
+              factory.createIdentifier(providerName),
+              [],
+              [],
+              undefined,
+              factory.createBlock([
+                factory.createExpressionStatement(
+                  factory.createBinaryExpression(
+                    factory.createIdentifier("instance"),
+                    factory.createToken(ts.SyntaxKind.EqualsToken),
+                    factory.createBinaryExpression(
+                      factory.createIdentifier("instance"),
+                      factory.createToken(ts.SyntaxKind.QuestionQuestionToken),
+                      factory.createNewExpression(
+                        classDeclaration.name,
+                        [],
+                        argumentsArray,
+                      ),
+                    ),
+                  ),
+                ),
+                factory.createReturnStatement(
+                  factory.createIdentifier("instance"),
+                ),
+              ]),
+            ),
+          ),
+        ]),
+      ),
+    ),
+    [],
+    [],
+  );
+}
+
+function createProviderArgument(
+  propertyDeclaration: ts.PropertyDeclaration,
+  parameter: ts.ParameterDeclaration,
+  environment: Environment,
+): ts.Expression {
+  const { program, context } = environment;
+  const { factory } = context;
+  const typeChecker = program.getTypeChecker();
+
+  assert.ok(
+    propertyDeclaration.parent !== undefined &&
+      ts.isClassDeclaration(propertyDeclaration.parent),
+    [
+      "[Jagger]",
+      "Expected property declaration parent to be a",
+      "class declaration.",
+    ].join(" "),
+  );
+
+  const providers = getProviders(propertyDeclaration.parent, environment);
+
+  assert.ok(
+    parameter.type &&
+      ts.isTypeReferenceNode(parameter.type) &&
+      ts.isIdentifier(parameter.type.typeName),
+    [
+      "[Jagger]",
+      "Expected constructor parameter to have a type",
+      "referenced by an identifier.",
+    ].join(" "),
+  );
+
+  if (parameter.type.typeName.escapedText === "Set") {
+    assert.ok(
+      parameter.type.typeArguments !== undefined &&
+        parameter.type.typeArguments.length === 1 &&
+        parameter.type.typeArguments[0] !== undefined &&
+        ts.isTypeReferenceNode(parameter.type.typeArguments[0]) &&
+        ts.isIdentifier(parameter.type.typeArguments[0].typeName),
+      [
+        "[Jagger]",
+        "Expected constructor parameter of type Set to have",
+        "exactly one type argument referenced by an identifier.",
+      ].join(" "),
+    );
+
+    const elements: ts.Expression[] = [];
+    for (const { provider, provideable } of providers) {
+      const provideableType = typeChecker.getTypeAtLocation(provideable);
+
+      const baseTypes = provideableType.getBaseTypes();
+      if (!baseTypes) {
+        continue;
+      }
+
+      const candidateTypes = [provideableType].concat(baseTypes);
+      for (const candidateType of candidateTypes) {
+        const candidateTypeSymbol = candidateType.getSymbol();
+
+        if (
+          candidateTypeSymbol !== undefined &&
+          candidateTypeSymbol.valueDeclaration !== undefined &&
+          ts.isClassDeclaration(candidateTypeSymbol.valueDeclaration) &&
+          candidateTypeSymbol.valueDeclaration.name !== undefined &&
+          candidateTypeSymbol.valueDeclaration.name.escapedText ===
+            parameter.type.typeArguments[0].typeName.escapedText
+        ) {
+          elements.push(
+            factory.createCallExpression(
+              factory.createPropertyAccessExpression(
+                factory.createThis(),
+                factory.createIdentifier(provider),
+              ),
+              [],
+              [],
+            ),
+          );
+        }
+      }
+    }
+
+    return factory.createNewExpression(
+      factory.createIdentifier("Set"),
+      [],
+      [factory.createArrayLiteralExpression(elements)],
+    );
+  }
+
+  let parameterProvider: string | undefined;
+  for (const { provider, provideable } of providers) {
+    if (
+      provideable.name !== undefined &&
+      provideable.name.escapedText === parameter.type.typeName.escapedText
+    ) {
+      parameterProvider = provider;
+      break;
+    }
+  }
+  assert.ok(
+    parameterProvider !== undefined,
+    [
+      "[Jagger]",
+      "Expected parameter to have a provider in the",
+      "enclosing class declaration.",
+    ].join(" "),
+  );
+
+  return factory.createCallExpression(
+    factory.createPropertyAccessExpression(
+      factory.createThis(),
+      factory.createIdentifier(parameterProvider),
+    ),
+    [],
+    [],
+  );
+}
+
+function getProviders(
+  classDeclaration: ts.ClassDeclaration,
+  environment: Environment,
+) {
+  const { program } = environment;
+  const typeChecker = program.getTypeChecker();
+  const type = typeChecker.getTypeAtLocation(classDeclaration);
+  const providers: {
+    provider: string;
+    provideable: ts.ClassDeclaration;
+  }[] = [];
+  for (const property of type.getProperties()) {
+    if (property.valueDeclaration === undefined) {
+      continue;
+    }
+    const propertyType = typeChecker.getTypeAtLocation(
+      property.valueDeclaration,
+    );
+
+    const callSignatures = propertyType.getCallSignatures();
+    assert.ok(
+      callSignatures.length === 1 && callSignatures[0] !== undefined,
+      [
+        "[Jagger]",
+        "Expected property in class declaration to have",
+        "exactly one call signature.",
+      ].join(" "),
+    );
+
+    const returnType = callSignatures[0].getReturnType();
+    assert.ok(
+      returnType.symbol.valueDeclaration !== undefined &&
+        ts.isClassDeclaration(returnType.symbol.valueDeclaration) &&
+        returnType.symbol.valueDeclaration.name !== undefined,
+      [
+        "[Jagger]",
+        "Expected property in class declaration to have",
+        "a return type with kind class declaration.",
+      ].join(" "),
+    );
+
+    providers.push({
+      provider: property.escapedName.toString(),
+      provideable: returnType.symbol.valueDeclaration,
+    });
+  }
+  return providers;
+}
+
+function findClassDeclarationForIdentifier(
+  identifier: ts.Identifier,
+  environment: Environment,
+): ts.ClassDeclaration | undefined {
+  const { program } = environment;
+  const typeChecker = program.getTypeChecker();
+  const symbol = typeChecker.getSymbolAtLocation(identifier);
+  if (
+    !(
+      symbol !== undefined &&
+      symbol.declarations !== undefined &&
+      symbol.declarations.length === 1 &&
+      symbol.declarations[0] !== undefined
+    )
+  ) {
+    return undefined;
+  }
+  const declaration = symbol.declarations[0];
+  if (ts.isClassDeclaration(declaration)) {
+    return declaration;
+  }
+  if (ts.isImportSpecifier(declaration)) {
+    return findClassDeclarationForImportSpecifier(declaration, environment);
+  }
+  return undefined;
+}
+
+function findClassDeclarationForImportSpecifier(
+  importSpecifier: ts.ImportSpecifier,
+  environment: Environment,
+): ts.ClassDeclaration | undefined {
+  const { program } = environment;
+  const typeChecker = program.getTypeChecker();
+  const moduleSpecifierSymbol = typeChecker.getSymbolAtLocation(
+    importSpecifier.parent.parent.parent.moduleSpecifier,
+  );
+  if (
+    !(
+      moduleSpecifierSymbol !== undefined &&
+      moduleSpecifierSymbol.exports !== undefined
+    )
+  ) {
+    return undefined;
+  }
+  const exportSymbol = moduleSpecifierSymbol.exports.get(
+    importSpecifier.name.escapedText,
+  );
+  if (
+    !(
+      exportSymbol !== undefined &&
+      exportSymbol.valueDeclaration !== undefined &&
+      ts.isClassDeclaration(exportSymbol.valueDeclaration)
+    )
+  ) {
+    return undefined;
+  }
+  return exportSymbol.valueDeclaration;
+}

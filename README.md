@@ -5,7 +5,7 @@
 1. Install dependencies:
 
 ```sh
-npm add -D ts-patch ts-pattern @ealmansi/jagger
+npm add -D ts-patch @ealmansi/jagger
 ```
 
 2. Configure prepare script:

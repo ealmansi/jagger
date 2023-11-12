@@ -5,7 +5,6 @@
 - Configurability
 - Reusable Providers
 - Optional Binding
-- Multibinding
 - Async Providers
 
 ## Publish a new version
