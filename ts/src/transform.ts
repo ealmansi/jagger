@@ -21,7 +21,6 @@ type Environment = {
 function createVisitor(environment: Environment) {
   return function visitor(node: ts.Node): ts.Node {
     const { context } = environment;
-
     if (
       !(
         ts.isCallExpression(node) &&
@@ -245,16 +244,25 @@ function createProviderArgument(
     const elements: ts.Expression[] = [];
     for (const { provider, provideable } of providers) {
       const provideableType = typeChecker.getTypeAtLocation(provideable);
-
-      const baseTypes = provideableType.getBaseTypes();
-      if (!baseTypes) {
-        continue;
-      }
-
-      const candidateTypes = [provideableType].concat(baseTypes);
+      let candidateTypes: ts.Type[] = [provideableType];
+      candidateTypes = candidateTypes.concat(
+        candidateTypes.flatMap(
+          (candidateType) =>
+            typeChecker
+              .getTypeAtLocation(candidateType.symbol.valueDeclaration!)
+              .getBaseTypes() || [],
+        ),
+      );
+      candidateTypes = candidateTypes.concat(
+        candidateTypes.flatMap(
+          (candidateType) =>
+            typeChecker
+              .getTypeAtLocation(candidateType.symbol.valueDeclaration!)
+              .getBaseTypes() || [],
+        ),
+      );
       for (const candidateType of candidateTypes) {
         const candidateTypeSymbol = candidateType.getSymbol();
-
         if (
           candidateTypeSymbol !== undefined &&
           candidateTypeSymbol.valueDeclaration !== undefined &&
