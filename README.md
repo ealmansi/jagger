@@ -26,7 +26,6 @@ import { Jagger } from "@ealmansi/jagger";
 
 class Logger {
   constructor() {}
-
   log(message: string): void {
     console.log(message);
   }
@@ -34,17 +33,25 @@ class Logger {
 
 class App {
   constructor(private readonly logger: Logger) {}
-
   start() {
     this.logger.log("App started!");
   }
 }
 
-class AppModule {
-  protected provideLogger = Jagger.provide(Logger);
-  public provideApp = Jagger.provide(App);
+class AppModule extends Jagger.Module {
+  provideLogger(): Logger {
+    return new Logger();
+  }
+  provideApp(logger: Logger): App {
+    return new App();
+  }
 }
 
-const app = new AppModule().provideApp();
+abstract class AppComponent extends Jagger.Component {
+  static module: AppModule;
+  abstract provideApp(): App;
+}
+
+const app = new AppComponentImpl().provideApp();
 app.start(); // App started!
 ```
