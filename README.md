@@ -5,37 +5,16 @@
 1. Install dependencies:
 
 ```sh
-npm add -D ts-patch @ealmansi/jagger
+npm add @ealmansi/jagger
 ```
 
-2. Configure prepare script:
+2. Configure prebuild script:
 
 ```jsonc
 // package.json
 {
   "scripts": {
-    "prepare": "ts-patch install -s"
-  }
-}
-```
-
-3. Ensure prepare script has been executed:
-
-```sh
-npm install
-```
-
-4. Configure TypeScript plugin:
-
-```jsonc
-// tsconfig.json
-{
-  "compilerOptions": {
-    "plugins": [
-      {
-        "transform": "@ealmansi/jagger/transform"
-      }
-    ]
+    "prebuild": "jagger-generate"
   }
 }
 ```
