@@ -39,12 +39,8 @@ class App {
 }
 
 class AppModule extends Jagger.Module {
-  provideLogger(): Logger {
-    return new Logger();
-  }
-  provideApp(logger: Logger): App {
-    return new App();
-  }
+  provideLogger = Jagger.instance(Logger);
+  provideApp = Jagger.instance(App);
 }
 
 abstract class AppComponent extends Jagger.Component {
