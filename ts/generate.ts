@@ -69,10 +69,22 @@ interface Graph {
   resolverReturnType: WeakMap<ts.MethodDeclaration, ts.Type>;
   modules: ts.ClassDeclaration[];
   moduleImports: WeakMap<ts.ClassDeclaration, ts.ClassDeclaration[]>;
-  moduleProviders: WeakMap<ts.ClassDeclaration, ts.MethodDeclaration[]>;
-  providerModule: WeakMap<ts.MethodDeclaration, ts.ClassDeclaration>;
-  providerParameterTypes: WeakMap<ts.MethodDeclaration, ts.Type[]>;
-  providerReturnType: WeakMap<ts.MethodDeclaration, ts.Type>;
+  moduleProviders: WeakMap<
+    ts.ClassDeclaration,
+    (ts.PropertyDeclaration | ts.MethodDeclaration)[]
+  >;
+  providerModule: WeakMap<
+    ts.PropertyDeclaration | ts.MethodDeclaration,
+    ts.ClassDeclaration
+  >;
+  providerParameterTypes: WeakMap<
+    ts.PropertyDeclaration | ts.MethodDeclaration,
+    ts.Type[]
+  >;
+  providerReturnType: WeakMap<
+    ts.PropertyDeclaration | ts.MethodDeclaration,
+    ts.Type
+  >;
 }
 
 function buildGraph(context: Context): Graph {
@@ -110,18 +122,24 @@ function buildGraph(context: Context): Graph {
   >();
   const moduleProviders = new WeakMap<
     ts.ClassDeclaration,
-    ts.MethodDeclaration[]
+    (ts.PropertyDeclaration | ts.MethodDeclaration)[]
   >();
   for (const module of modules) {
     moduleImports.set(module, getModuleImports(context, module));
     moduleProviders.set(module, getModuleProviders(context, module));
   }
   const providerModule = new WeakMap<
-    ts.MethodDeclaration,
+    ts.PropertyDeclaration | ts.MethodDeclaration,
     ts.ClassDeclaration
   >();
-  const providerParameterTypes = new WeakMap<ts.MethodDeclaration, ts.Type[]>();
-  const providerReturnType = new WeakMap<ts.MethodDeclaration, ts.Type>();
+  const providerParameterTypes = new WeakMap<
+    ts.PropertyDeclaration | ts.MethodDeclaration,
+    ts.Type[]
+  >();
+  const providerReturnType = new WeakMap<
+    ts.PropertyDeclaration | ts.MethodDeclaration,
+    ts.Type
+  >();
   for (const module of modules) {
     const providers = moduleProviders.get(module);
     assert.ok(providers, "providers");
@@ -287,41 +305,92 @@ function getModuleImports(
 }
 
 function getModuleProviders(
-  _context: Context,
+  context: Context,
   module: ts.ClassDeclaration,
-): ts.MethodDeclaration[] {
-  return module.members.filter(ts.isMethodDeclaration);
+): (ts.PropertyDeclaration | ts.MethodDeclaration)[] {
+  const { typeChecker } = context;
+  return [
+    ...module.members
+      .filter(ts.isPropertyDeclaration)
+      .filter((propertyDeclaration) => {
+        const signatures = typeChecker
+          .getTypeAtLocation(propertyDeclaration)
+          .getCallSignatures();
+        return signatures.length === 1;
+      }),
+    ...module.members.filter(ts.isMethodDeclaration),
+  ];
 }
 
 function getProviderParameterTypes(
   context: Context,
-  provider: ts.MethodDeclaration,
+  provider: ts.PropertyDeclaration | ts.MethodDeclaration,
 ): ts.Type[] {
   const { typeChecker } = context;
-  return provider.parameters
-    .map((parameter) => parameter.type)
-    .filter(isNotUndefined)
-    .map(typeChecker.getTypeAtLocation);
+  if (ts.isPropertyDeclaration(provider)) {
+    const signatures = typeChecker
+      .getTypeAtLocation(provider)
+      .getCallSignatures();
+    assert.ok(signatures.length === 1, "signatures.length === 1");
+    const [signature] = signatures;
+    const parameterSymbols = signature.getParameters();
+    const parameterDeclarations = signature.getDeclaration().parameters;
+    assert.ok(
+      parameterSymbols.length === parameterDeclarations.length,
+      "parameterSymbols.length === parameterDeclarations.length",
+    );
+    return parameterSymbols.flatMap((parameterSymbol, index) => {
+      const type = typeChecker.getTypeOfSymbol(parameterSymbol);
+      const parameterDeclaration = parameterDeclarations[index];
+      if (parameterDeclaration.dotDotDotToken !== undefined) {
+        assert.ok(typeChecker.isTupleType(type));
+        const tupleTypeReference = type as ts.TupleTypeReference;
+        const tupleType = tupleTypeReference.target;
+        assert.ok(tupleType.labeledElementDeclarations);
+        return tupleType.labeledElementDeclarations
+          .filter(isNotUndefined)
+          .filter(ts.isParameter)
+          .map((parameterDeclaration) => parameterDeclaration.type)
+          .filter(isNotUndefined)
+          .map(typeChecker.getTypeAtLocation);
+      }
+      return [type];
+    });
+  } else {
+    return provider.parameters
+      .map((parameter) => parameter.type)
+      .filter(isNotUndefined)
+      .map(typeChecker.getTypeAtLocation);
+  }
 }
 
 function getResolverReturnType(
   context: Context,
-  resolve: ts.MethodDeclaration,
+  resolver: ts.MethodDeclaration,
 ): ts.Type {
   const { typeChecker } = context;
-  const typeNode = resolve.type;
+  const typeNode = resolver.type;
   assert.ok(typeNode, "typeNode");
   return typeChecker.getTypeAtLocation(typeNode);
 }
 
 function getProviderReturnType(
   context: Context,
-  provider: ts.MethodDeclaration,
+  provider: ts.PropertyDeclaration | ts.MethodDeclaration,
 ): ts.Type {
   const { typeChecker } = context;
-  const typeNode = provider.type;
-  assert.ok(typeNode, "typeNode");
-  return typeChecker.getTypeAtLocation(typeNode);
+  if (ts.isPropertyDeclaration(provider)) {
+    const signatures = typeChecker
+      .getTypeAtLocation(provider)
+      .getCallSignatures();
+    assert.ok(signatures.length === 1, "signatures.length === 1");
+    const [signature] = signatures;
+    return signature.getReturnType();
+  } else {
+    const typeNode = provider.type;
+    assert.ok(typeNode, "typeNode");
+    return typeChecker.getTypeAtLocation(typeNode);
+  }
 }
 
 interface Visitor {
@@ -694,7 +763,7 @@ function resolveType(
   >,
   module: ts.ClassDeclaration,
   type: ts.Type,
-): ts.MethodDeclaration {
+): ts.PropertyDeclaration | ts.MethodDeclaration {
   const { typeChecker } = context;
   let currentModule: ts.ClassDeclaration | undefined = module;
   while (currentModule !== undefined) {
@@ -703,7 +772,10 @@ function resolveType(
       graph,
       currentModule,
     );
-    const candidateProviders: ts.MethodDeclaration[] = [];
+    const candidateProviders: (
+      | ts.PropertyDeclaration
+      | ts.MethodDeclaration
+    )[] = [];
     for (const availableModule of availableModules) {
       const availableProviders = graph.moduleProviders.get(availableModule);
       assert.ok(
