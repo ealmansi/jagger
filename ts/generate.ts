@@ -8,11 +8,15 @@ import assert from "node:assert/strict";
 function main() {
   const context = buildContext();
   const graph = buildGraph(context);
+  const graphResolution = buildGraphResolution(context, graph);
   for (const component of graph.components) {
-    generateComponentImpl(context, graph, component);
+    generateComponentImpl(context, graph, graphResolution, component);
   }
 }
 
+/**
+ *
+ */
 interface Context {
   parsedCommandLine: ts.ParsedCommandLine;
   program: ts.Program;
@@ -62,6 +66,9 @@ function buildContext(): Context {
   };
 }
 
+/**
+ *
+ */
 interface Graph {
   components: ts.ClassDeclaration[];
   componentModule: WeakMap<ts.ClassDeclaration, ts.ClassDeclaration>;
@@ -169,6 +176,9 @@ function buildGraph(context: Context): Graph {
   };
 }
 
+/**
+ *
+ */
 function getComponents(context: Context): ts.ClassDeclaration[] {
   const { program } = context;
   const components: ts.ClassDeclaration[] = [];
@@ -343,16 +353,15 @@ function getProviderParameterTypes(
       const type = typeChecker.getTypeOfSymbol(parameterSymbol);
       const parameterDeclaration = parameterDeclarations[index];
       if (parameterDeclaration.dotDotDotToken !== undefined) {
-        assert.ok(typeChecker.isTupleType(type));
-        const tupleTypeReference = type as ts.TupleTypeReference;
-        const tupleType = tupleTypeReference.target;
-        assert.ok(tupleType.labeledElementDeclarations);
-        return tupleType.labeledElementDeclarations
-          .filter(isNotUndefined)
-          .filter(ts.isParameter)
-          .map((parameterDeclaration) => parameterDeclaration.type)
-          .filter(isNotUndefined)
-          .map(typeChecker.getTypeAtLocation);
+        if (type.getFlags() & ts.TypeFlags.Object) {
+          const objectType = type as ts.ObjectType;
+          if (objectType.objectFlags & ts.ObjectFlags.Reference) {
+            const typeReference = type as ts.TypeReference;
+            const typeArguments =
+              context.typeChecker.getTypeArguments(typeReference);
+            return typeArguments;
+          }
+        }
       }
       return [type];
     });
@@ -414,10 +423,277 @@ function isNotUndefined<T extends {}>(x: T | undefined): x is T {
 /**
  *
  */
+type TypeResolution = ProviderTypeResolution | SetTypeResolution;
+
+interface ProviderTypeResolution {
+  kind: "ProviderTypeResolution";
+  type: ts.Type;
+  module: ts.ClassDeclaration;
+  provider: ts.PropertyDeclaration | ts.MethodDeclaration;
+  parameterTypeResolutions: TypeResolution[];
+}
+
+interface SetTypeResolution {
+  kind: "SetTypeResolution";
+  type: ts.Type;
+  module: ts.ClassDeclaration;
+  elementTypeResolutions: TypeResolution[];
+}
+
+interface GraphResolution {
+  resolverTypeResolution: WeakMap<ts.MethodDeclaration, TypeResolution>;
+  componentModuleInstances: WeakMap<ts.ClassDeclaration, ts.ClassDeclaration[]>;
+  componentTypeResolutions: WeakMap<ts.ClassDeclaration, TypeResolution[]>;
+}
+
+function buildGraphResolution(context: Context, graph: Graph): GraphResolution {
+  const resolverTypeResolution = new WeakMap<
+    ts.MethodDeclaration,
+    TypeResolution
+  >();
+  const componentModuleInstances = new WeakMap<
+    ts.ClassDeclaration,
+    ts.ClassDeclaration[]
+  >();
+  const componentTypeResolutions = new WeakMap<
+    ts.ClassDeclaration,
+    TypeResolution[]
+  >();
+  for (const component of graph.components) {
+    componentModuleInstances.set(component, []);
+    componentTypeResolutions.set(component, []);
+    const module = ok(graph.componentModule.get(component));
+    const resolvers = ok(graph.componentResolvers.get(component));
+    for (const resolver of resolvers) {
+      const returnType = ok(graph.resolverReturnType.get(resolver));
+      const moduleStack = [module];
+      const moduleTypeMap = new WeakMap<
+        ts.ClassDeclaration,
+        WeakSet<ts.Type>
+      >();
+      const returnTypeResolutions = Array.from(
+        getTypeResolutions(
+          context,
+          graph,
+          moduleStack,
+          moduleTypeMap,
+          returnType,
+          0,
+        ),
+      );
+      if (returnTypeResolutions.length === 0) {
+        assert.fail(
+          [
+            "Failed to resolve type ",
+            context.typeChecker.typeToString(returnType),
+            " for ",
+            resolver.name.getText(),
+            " in ",
+            ok(component.name).text,
+          ].join(""),
+        );
+      }
+      if (returnTypeResolutions.length > 1) {
+        assert.fail(
+          [
+            "Type ",
+            context.typeChecker.typeToString(returnType),
+            " for ",
+            resolver.name.getText(),
+            " in ",
+            ok(component.name).text,
+            " cannot be resolved unambiguously",
+          ].join(""),
+        );
+      }
+      const [returnTypeResolution] = returnTypeResolutions;
+      resolverTypeResolution.set(resolver, returnTypeResolution);
+      for (const typeResolutionModule of getTypeResolutionModules(
+        returnTypeResolution,
+      )) {
+        ok(componentModuleInstances.get(component)).push(typeResolutionModule);
+      }
+      for (const typeResolution of getTypeResolutionTypeResolutions(
+        returnTypeResolution,
+      )) {
+        ok(componentTypeResolutions.get(component)).push(typeResolution);
+      }
+    }
+  }
+  return {
+    resolverTypeResolution,
+    componentModuleInstances,
+    componentTypeResolutions,
+  };
+}
+
+function* getTypeResolutions(
+  context: Context,
+  graph: Graph,
+  moduleStack: ts.ClassDeclaration[],
+  moduleTypeMap: WeakMap<ts.ClassDeclaration, WeakSet<ts.Type>>,
+  type: ts.Type,
+  level: number,
+): Generator<TypeResolution> {
+  if (moduleStack.length === 0) {
+    return;
+  }
+  const module = ok(moduleStack.at(-1));
+  if (!moduleTypeMap.has(module)) {
+    moduleTypeMap.set(module, new WeakSet());
+  }
+  if (ok(moduleTypeMap.get(module)).has(type)) {
+    return;
+  }
+  ok(moduleTypeMap.get(module)).add(type);
+  const providers = ok(graph.moduleProviders.get(module));
+  const importedModules = ok(graph.moduleImports.get(module));
+  for (const provider of providers) {
+    const returnType = ok(graph.providerReturnType.get(provider));
+    if (returnType === type) {
+      const parameterTypes = ok(graph.providerParameterTypes.get(provider));
+      const parameterTypeResolutions: TypeResolution[] = [];
+      for (const parameterType of parameterTypes) {
+        const parameterTypeResolution = Array.from(
+          getTypeResolutions(
+            context,
+            graph,
+            moduleStack,
+            moduleTypeMap,
+            parameterType,
+            level + 1,
+          ),
+        ).at(0);
+        if (parameterTypeResolution === undefined) {
+          console.log(
+            [
+              " ".repeat(level),
+              "could not satisfy ",
+              context.typeChecker.typeToString(parameterType),
+              " for ",
+              provider.name.getText(),
+              " in ",
+              ok(module.name).text,
+            ].join(""),
+          );
+          break;
+        }
+        parameterTypeResolutions.push(parameterTypeResolution);
+      }
+      if (parameterTypes.length === parameterTypeResolutions.length) {
+        yield {
+          kind: "ProviderTypeResolution",
+          type,
+          module,
+          provider,
+          parameterTypeResolutions,
+        };
+      }
+    }
+  }
+  if (type.symbol.getName() === "Set") {
+    if (type.getFlags() & ts.TypeFlags.Object) {
+      const objectType = type as ts.ObjectType;
+      if (objectType.objectFlags & ts.ObjectFlags.Reference) {
+        const typeReference = type as ts.TypeReference;
+        const typeArguments =
+          context.typeChecker.getTypeArguments(typeReference);
+        if (typeArguments.length === 1) {
+          const [typeArgument] = typeArguments;
+          yield {
+            kind: "SetTypeResolution",
+            type,
+            module,
+            elementTypeResolutions: Array.from(
+              getTypeResolutions(
+                context,
+                graph,
+                moduleStack,
+                moduleTypeMap,
+                typeArgument,
+                level + 1,
+              ),
+            ),
+          };
+        }
+      }
+    }
+  }
+  for (const importedModule of importedModules) {
+    moduleStack.push(importedModule);
+    yield* getTypeResolutions(
+      context,
+      graph,
+      moduleStack,
+      moduleTypeMap,
+      type,
+      level + 1,
+    );
+    moduleStack.pop();
+  }
+  moduleStack.pop();
+  yield* getTypeResolutions(
+    context,
+    graph,
+    moduleStack,
+    moduleTypeMap,
+    type,
+    level + 1,
+  );
+  moduleStack.push(module);
+  ok(moduleTypeMap.get(module)).delete(type);
+}
+
+function getTypeResolutionModules(
+  typeResolution: TypeResolution,
+): Set<ts.ClassDeclaration> {
+  const modules = new Set<ts.ClassDeclaration>();
+  modules.add(typeResolution.module);
+  for (const childTypeResolution of getTypeResolutionChildTypeResolutions(
+    typeResolution,
+  )) {
+    for (const descendantModules of getTypeResolutionModules(
+      childTypeResolution,
+    )) {
+      modules.add(descendantModules);
+    }
+  }
+  return modules;
+}
+
+function getTypeResolutionTypeResolutions(
+  typeResolution: TypeResolution,
+): Set<TypeResolution> {
+  const typeResolutions = new Set<TypeResolution>();
+  typeResolutions.add(typeResolution);
+  for (const childTypeResolution of getTypeResolutionChildTypeResolutions(
+    typeResolution,
+  )) {
+    for (const descendantTypeResolution of getTypeResolutionTypeResolutions(
+      childTypeResolution,
+    )) {
+      typeResolutions.add(descendantTypeResolution);
+    }
+  }
+  return typeResolutions;
+}
+
+function getTypeResolutionChildTypeResolutions(
+  typeResolution: TypeResolution,
+): TypeResolution[] {
+  return typeResolution.kind === "ProviderTypeResolution"
+    ? typeResolution.parameterTypeResolutions
+    : typeResolution.elementTypeResolutions;
+}
+
+/**
+ *
+ */
 
 function generateComponentImpl(
   context: Context,
   graph: Graph,
+  graphResolution: GraphResolution,
   component: ts.ClassDeclaration,
 ): void {
   const { parsedCommandLine, factory } = context;
@@ -439,7 +715,7 @@ function generateComponentImpl(
       ts.ListFormat.MultiLine,
       factory.createNodeArray([
         ...buildImports(context, graph, component, outputFileName),
-        buildComponentImpl(context, graph, component),
+        buildComponentImpl(context, graph, graphResolution, component),
       ]),
       ts.createSourceFile(
         outputFileName,
@@ -499,14 +775,21 @@ function buildImports(
 function buildComponentImpl(
   context: Context,
   graph: Graph,
+  graphResolution: GraphResolution,
   component: ts.ClassDeclaration,
 ): ts.ClassDeclaration {
   const { factory } = context;
   assert.ok(component.name, "component.name");
   const resolvers = graph.componentResolvers.get(component);
   assert.ok(resolvers, "resolvers");
-  const [availableModules, availableModuleParent] =
-    getComponentAvailableModules(context, graph, component);
+  const moduleInstances = ok(
+    graphResolution.componentModuleInstances.get(component),
+  );
+  const typeResolutions = ok(
+    graphResolution.componentTypeResolutions.get(component),
+  );
+  const typeResolutionNames = new Set<string>();
+  const syntheticTypeResolutionName = new Map<TypeResolution, string>();
   return factory.createClassDeclaration(
     [factory.createToken(ts.SyntaxKind.ExportKeyword)],
     factory.createIdentifier(component.name.text + "Impl"),
@@ -529,20 +812,8 @@ function buildComponentImpl(
         assert.ok(resolverReturnType, "resolverReturnType");
         const module = graph.componentModule.get(component);
         assert.ok(module, "module");
-        const resolvedProvider = resolveType(
-          context,
-          graph,
-          component,
-          availableModuleParent,
-          module,
-          resolverReturnType,
-        );
-        const resolvedModule = graph.providerModule.get(resolvedProvider);
-        assert.ok(resolvedModule, "resolvedModule");
-        assert.ok(resolvedModule.name, "resolvedModule.name");
-        assert.ok(
-          ts.isIdentifier(resolvedProvider.name),
-          "ts.isIdentifier(resolvedProvider.name)",
+        const typeResolution = ok(
+          graphResolution.resolverTypeResolution.get(resolver),
         );
         return factory.createMethodDeclaration(
           undefined,
@@ -559,10 +830,10 @@ function buildComponentImpl(
                   factory.createPropertyAccessExpression(
                     factory.createThis(),
                     factory.createIdentifier(
-                      "_" +
-                        resolvedModule.name.text +
-                        "_" +
-                        resolvedProvider.name.text,
+                      buildTypeResolutionName(
+                        typeResolution,
+                        syntheticTypeResolutionName,
+                      ),
                     ),
                   ),
                   undefined,
@@ -574,11 +845,11 @@ function buildComponentImpl(
           ),
         );
       }),
-      ...availableModules.map((module) => {
-        assert.ok(module.name, "module.name");
+      ...moduleInstances.map((moduleInstance) => {
+        assert.ok(moduleInstance.name, "module.name");
         return factory.createPropertyDeclaration(
           [factory.createToken(ts.SyntaxKind.PrivateKeyword)],
-          factory.createIdentifier("_" + module.name.text),
+          factory.createIdentifier("_" + moduleInstance.name.text),
           undefined,
           undefined,
           undefined,
@@ -596,17 +867,17 @@ function buildComponentImpl(
                 [],
               ),
             ),
-            ...availableModules.map((module) => {
-              assert.ok(module.name, "module.name");
+            ...moduleInstances.map((moduleInstance) => {
+              assert.ok(moduleInstance.name, "module.name");
               return factory.createExpressionStatement(
                 factory.createBinaryExpression(
                   factory.createPropertyAccessExpression(
                     factory.createThis(),
-                    factory.createIdentifier("_" + module.name.text),
+                    factory.createIdentifier("_" + moduleInstance.name.text),
                   ),
                   factory.createToken(ts.SyntaxKind.EqualsToken),
                   factory.createNewExpression(
-                    factory.createIdentifier(module.name.text),
+                    factory.createIdentifier(moduleInstance.name.text),
                     undefined,
                     [],
                   ),
@@ -617,82 +888,152 @@ function buildComponentImpl(
           true,
         ),
       ),
-      ...availableModules.flatMap((module) => {
-        const providers = graph.moduleProviders.get(module);
-        assert.ok(providers, "providers");
-        return providers.map((provider) => {
-          assert.ok(module.name, "module.name");
-          assert.ok(
-            ts.isIdentifier(provider.name),
-            "ts.isIdentifier(provider.name)",
-          );
-          const parameterTypes = graph.providerParameterTypes.get(provider);
-          assert.ok(parameterTypes, "parameterTypes");
-          return factory.createMethodDeclaration(
-            [factory.createToken(ts.SyntaxKind.PrivateKeyword)],
-            undefined,
-            factory.createIdentifier(
-              "_" + module.name.text + "_" + provider.name.text,
-            ),
-            undefined,
-            undefined,
-            [],
-            undefined,
-            factory.createBlock(
-              [
-                factory.createReturnStatement(
-                  factory.createCallExpression(
-                    factory.createPropertyAccessExpression(
-                      factory.createPropertyAccessExpression(
-                        factory.createThis(),
-                        factory.createIdentifier("_" + module.name.text),
-                      ),
-                      factory.createIdentifier(provider.name.text),
-                    ),
-                    undefined,
-                    [
-                      ...parameterTypes.map((parameterType) => {
-                        const resolvedProvider = resolveType(
-                          context,
-                          graph,
-                          component,
-                          availableModuleParent,
-                          module,
-                          parameterType,
-                        );
-                        const resolvedModule =
-                          graph.providerModule.get(resolvedProvider);
-                        assert.ok(resolvedModule, "resolvedModule");
-                        assert.ok(resolvedModule.name, "resolvedModule.name");
-                        assert.ok(
-                          ts.isIdentifier(resolvedProvider.name),
-                          "ts.isIdentifier(resolvedProvider.name)",
-                        );
-                        return factory.createCallExpression(
+      ...typeResolutions.flatMap((typeResolution) => {
+        switch (typeResolution.kind) {
+          case "ProviderTypeResolution":
+            const typeResolutionName = buildTypeResolutionName(
+              typeResolution,
+              syntheticTypeResolutionName,
+            );
+            if (typeResolutionNames.has(typeResolutionName)) {
+              return [];
+            }
+            typeResolutionNames.add(typeResolutionName);
+            return [
+              factory.createMethodDeclaration(
+                [factory.createToken(ts.SyntaxKind.PrivateKeyword)],
+                undefined,
+                factory.createIdentifier(typeResolutionName),
+                undefined,
+                undefined,
+                [],
+                undefined,
+                factory.createBlock(
+                  [
+                    factory.createReturnStatement(
+                      factory.createCallExpression(
+                        factory.createPropertyAccessExpression(
                           factory.createPropertyAccessExpression(
                             factory.createThis(),
                             factory.createIdentifier(
-                              "_" +
-                                resolvedModule.name.text +
-                                "_" +
-                                resolvedProvider.name.text,
+                              "_" + ok(typeResolution.module.name).text,
                             ),
                           ),
-                          undefined,
-                          [],
-                        );
-                      }),
-                    ],
+                          factory.createIdentifier(
+                            typeResolution.provider.name.getText(),
+                          ),
+                        ),
+                        undefined,
+                        [
+                          ...typeResolution.parameterTypeResolutions.map(
+                            (parameterTypeResolution) => {
+                              return factory.createCallExpression(
+                                factory.createPropertyAccessExpression(
+                                  factory.createThis(),
+                                  factory.createIdentifier(
+                                    buildTypeResolutionName(
+                                      parameterTypeResolution,
+                                      syntheticTypeResolutionName,
+                                    ),
+                                  ),
+                                ),
+                                undefined,
+                                [],
+                              );
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  true,
+                ),
+              ),
+            ];
+          case "SetTypeResolution":
+            return [
+              factory.createMethodDeclaration(
+                [factory.createToken(ts.SyntaxKind.PrivateKeyword)],
+                undefined,
+                factory.createIdentifier(
+                  buildTypeResolutionName(
+                    typeResolution,
+                    syntheticTypeResolutionName,
                   ),
                 ),
-              ],
-              true,
-            ),
-          );
-        });
+                undefined,
+                undefined,
+                [],
+                undefined,
+                factory.createBlock(
+                  [
+                    factory.createReturnStatement(
+                      factory.createNewExpression(
+                        factory.createIdentifier("Set"),
+                        undefined,
+                        [
+                          factory.createArrayLiteralExpression(
+                            [
+                              ...typeResolution.elementTypeResolutions.map(
+                                (elementTypeResolution) => {
+                                  return factory.createCallExpression(
+                                    factory.createPropertyAccessExpression(
+                                      factory.createThis(),
+                                      factory.createIdentifier(
+                                        buildTypeResolutionName(
+                                          elementTypeResolution,
+                                          syntheticTypeResolutionName,
+                                        ),
+                                      ),
+                                    ),
+                                    undefined,
+                                    [],
+                                  );
+                                },
+                              ),
+                            ],
+                            false,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  true,
+                ),
+              ),
+            ];
+        }
       }),
     ],
   );
+}
+
+function buildTypeResolutionName(
+  typeResolution: TypeResolution,
+  syntheticTypeResolutionName: Map<TypeResolution, string>,
+) {
+  switch (typeResolution.kind) {
+    case "ProviderTypeResolution":
+      return (
+        "_" +
+        ok(typeResolution.module.name).text +
+        "_" +
+        typeResolution.provider.name.getText()
+      );
+    case "SetTypeResolution":
+      if (!syntheticTypeResolutionName.has(typeResolution)) {
+        syntheticTypeResolutionName.set(
+          typeResolution,
+          "synthetic_" + syntheticTypeResolutionName.size.toString(),
+        );
+      }
+      return (
+        "_" +
+        ok(typeResolution.module.name).text +
+        "_" +
+        ok(syntheticTypeResolutionName.get(typeResolution))
+      );
+  }
 }
 
 function getComponentAvailableModules(
@@ -753,56 +1094,62 @@ function getModuleAvailableModules(
   return [availableModules, availableModuleParent];
 }
 
-function resolveType(
-  context: Context,
-  graph: Graph,
-  _component: ts.ClassDeclaration,
-  availableModuleParent: WeakMap<
-    ts.ClassDeclaration,
-    ts.ClassDeclaration | undefined
-  >,
-  module: ts.ClassDeclaration,
-  type: ts.Type,
-): ts.PropertyDeclaration | ts.MethodDeclaration {
-  const { typeChecker } = context;
-  let currentModule: ts.ClassDeclaration | undefined = module;
-  while (currentModule !== undefined) {
-    const [availableModules] = getModuleAvailableModules(
-      context,
-      graph,
-      currentModule,
-    );
-    const candidateProviders: (
-      | ts.PropertyDeclaration
-      | ts.MethodDeclaration
-    )[] = [];
-    for (const availableModule of availableModules) {
-      const availableProviders = graph.moduleProviders.get(availableModule);
-      assert.ok(
-        availableProviders,
-        "availableProviders " + availableModule.name?.text,
-      );
-      for (const availableProvider of availableProviders) {
-        const availableProviderReturnType =
-          graph.providerReturnType.get(availableProvider);
-        assert.ok(availableProviderReturnType, "availableProviderReturnType");
-        if (availableProviderReturnType === type) {
-          candidateProviders.push(availableProvider);
-        }
-      }
-    }
-    if (candidateProviders.length > 0) {
-      return candidateProviders[0];
-    }
-    currentModule = availableModuleParent.get(currentModule);
-  }
-  assert.ok(module.name, "module.name");
-  assert.fail(
-    "Could not resolve type " +
-      typeChecker.typeToString(type) +
-      " in module " +
-      module.name.text,
-  );
+// function getTypeResolutions(
+//   context: Context,
+//   graph: Graph,
+//   _component: ts.ClassDeclaration,
+//   availableModuleParent: WeakMap<
+//     ts.ClassDeclaration,
+//     ts.ClassDeclaration | undefined
+//   >,
+//   module: ts.ClassDeclaration,
+//   type: ts.Type,
+// ): ts.PropertyDeclaration | ts.MethodDeclaration {
+//   const { typeChecker } = context;
+//   let currentModule: ts.ClassDeclaration | undefined = module;
+//   while (currentModule !== undefined) {
+//     const [availableModules] = getModuleAvailableModules(
+//       context,
+//       graph,
+//       currentModule,
+//     );
+//     const candidateProviders: (
+//       | ts.PropertyDeclaration
+//       | ts.MethodDeclaration
+//     )[] = [];
+//     for (const availableModule of availableModules) {
+//       const availableProviders = graph.moduleProviders.get(availableModule);
+//       assert.ok(availableProviders, "availableProviders");
+//       for (const availableProvider of availableProviders) {
+//         const availableProviderReturnType =
+//           graph.providerReturnType.get(availableProvider);
+//         assert.ok(availableProviderReturnType, "availableProviderReturnType");
+//         if (availableProviderReturnType === type) {
+//           candidateProviders.push(availableProvider);
+//         }
+//       }
+//     }
+//     if (candidateProviders.length > 0) {
+//       return candidateProviders[0];
+//     }
+//     currentModule = availableModuleParent.get(currentModule);
+//   }
+//   assert.ok(module.name, "module.name");
+//   assert.fail(
+//     "Could not resolve type " +
+//       typeChecker.typeToString(type) +
+//       " in module " +
+//       module.name.text,
+//   );
+// }
+
+/**
+ *
+ */
+
+function ok<T>(x: T): NonNullable<T> {
+  assert.ok(x);
+  return x;
 }
 
 /**
