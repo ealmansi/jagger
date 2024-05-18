@@ -9,9 +9,7 @@ export namespace Jagger {
 
   export function instance<Class extends new (...args: any) => any>(
     klass: Class,
-  ): {
-    (...args: ConstructorParameters<Class>): InstanceType<Class>;
-  } {
+  ): Provider<ConstructorParameters<Class>, InstanceType<Class>> {
     return function (
       ...args: ConstructorParameters<Class>
     ): InstanceType<Class> {
@@ -19,18 +17,17 @@ export namespace Jagger {
     };
   }
 
-  export function as<SubType extends Type, Type>(): {
-    (value: SubType): Type;
-  } {
+  export function as<SubType extends Type, Type>(): Provider<[SubType], Type> {
     return function (value: SubType): Type {
       return value;
     };
   }
 
-  export function array<Values extends Array<Type>, Type>(): {
-    (...values: Values): Array<Type>;
-  } {
-    return function (...values: Values): Array<Type> {
+  export function array<Values extends Type[], Type>(): Provider<
+    Values,
+    Type[]
+  > {
+    return function (...values: Values): Type[] {
       return values;
     };
   }

@@ -1,7 +1,7 @@
 import { AppComponent } from "../index.js";
 import { AppModule } from "../index.js";
 export class AppComponentImpl extends AppComponent {
-    provideApp() {
+    buildApp() {
         return this._AppModule_provideApp();
     }
     private _AppModule;

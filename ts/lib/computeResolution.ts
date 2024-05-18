@@ -38,12 +38,17 @@ export function buildResolution(
     ts.ClassDeclaration,
     ts.ClassDeclaration[]
   >();
+  const componentModuleInstancesSet = new Map<
+    ts.ClassDeclaration,
+    Set<ts.ClassDeclaration>
+  >();
   const componentTypeResolutions = new Map<
     ts.ClassDeclaration,
     TypeResolution[]
   >();
   for (const component of graph.components) {
     componentModuleInstances.set(component, []);
+    componentModuleInstancesSet.set(component, new Set());
     componentTypeResolutions.set(component, []);
     const module = orThrow(graph.componentModule.get(component));
     const resolvers = orThrow(graph.componentResolvers.get(component));
@@ -88,12 +93,18 @@ export function buildResolution(
       }
       const returnTypeResolution = orThrow(returnTypeResolutions.at(0));
       resolverTypeResolution.set(resolver, returnTypeResolution);
+      const moduleInstancesSet = orThrow(
+        componentModuleInstancesSet.get(component),
+      );
+      const moduleInstances = orThrow(componentModuleInstances.get(component));
       for (const typeResolutionModule of getTypeResolutionModules(
         returnTypeResolution,
       )) {
-        orThrow(componentModuleInstances.get(component)).push(
-          typeResolutionModule,
-        );
+        if (moduleInstancesSet.has(typeResolutionModule)) {
+          continue;
+        }
+        moduleInstancesSet.add(typeResolutionModule);
+        moduleInstances.push(typeResolutionModule);
       }
       for (const typeResolution of getTypeResolutionTypeResolutions(
         returnTypeResolution,

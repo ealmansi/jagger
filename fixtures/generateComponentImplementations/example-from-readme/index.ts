@@ -21,5 +21,5 @@ export class AppModule extends Jagger.Module {
 
 export abstract class AppComponent extends Jagger.Component {
   static module: AppModule;
-  abstract provideApp(): App;
+  abstract buildApp(): App;
 }

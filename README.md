@@ -24,30 +24,31 @@ npm add @ealmansi/jagger
 ```ts
 import { Jagger } from "@ealmansi/jagger";
 
-class Logger {
+export class Logger {
   constructor() {}
   log(message: string): void {
     console.log(message);
   }
 }
 
-class App {
+export class App {
   constructor(private readonly logger: Logger) {}
   start() {
     this.logger.log("App started!");
   }
 }
 
-class AppModule extends Jagger.Module {
+export class AppModule extends Jagger.Module {
   provideLogger = Jagger.instance(Logger);
   provideApp = Jagger.instance(App);
 }
 
-abstract class AppComponent extends Jagger.Component {
+export abstract class AppComponent extends Jagger.Component {
   static module: AppModule;
-  abstract provideApp(): App;
+  abstract buildApp(): App;
 }
 
+// in index.ts
 const app = new AppComponentImpl().provideApp();
 app.start(); // App started!
 ```
