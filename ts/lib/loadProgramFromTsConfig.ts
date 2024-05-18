@@ -3,6 +3,7 @@ import path from "node:path";
 import assert from "node:assert/strict";
 
 export function loadProgramFromTsConfigFile(
+  system: ts.System,
   tsConfigFileName: string | undefined,
 ): ts.Program {
   if (tsConfigFileName === undefined) {
@@ -10,14 +11,14 @@ export function loadProgramFromTsConfigFile(
     const tsConfigBaseName = "tsconfig.json";
     tsConfigFileName = ts.findConfigFile(
       searchPath,
-      ts.sys.fileExists,
+      system.fileExists,
       tsConfigBaseName,
     );
     assert.ok(tsConfigFileName, "fileName");
   }
   const readConfigFileResult = ts.readConfigFile(
     tsConfigFileName,
-    ts.sys.readFile,
+    system.readFile,
   );
   if (readConfigFileResult.error !== undefined) {
     if (typeof readConfigFileResult.error.messageText === "string") {
@@ -28,7 +29,7 @@ export function loadProgramFromTsConfigFile(
   }
   const parsedCommandLine = ts.parseJsonConfigFileContent(
     readConfigFileResult.config,
-    ts.sys,
+    system,
     path.dirname(tsConfigFileName),
   );
   const createProgramOptions: ts.CreateProgramOptions = {

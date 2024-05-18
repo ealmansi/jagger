@@ -3,6 +3,7 @@
 import { Command } from "commander";
 import packageJson from "../../package.json" assert { type: "json" };
 import { generateComponentImplementations } from "../lib/generateComponentImplementations.js";
+import ts from "typescript";
 
 function main() {
   const options = new Command()
@@ -13,7 +14,7 @@ function main() {
     .opts();
   const tsConfigFileName =
     typeof options["project"] === "string" ? options["project"] : undefined;
-  generateComponentImplementations(tsConfigFileName);
+  generateComponentImplementations(ts.sys, tsConfigFileName);
 }
 
 main();
