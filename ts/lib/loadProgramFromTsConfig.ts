@@ -2,12 +2,23 @@ import ts from "typescript";
 import path from "node:path";
 import assert from "node:assert/strict";
 
-export function loadProgramFromTsConfig(): ts.Program {
-  const searchPath = path.resolve(".");
-  const baseName = "tsconfig.json";
-  const fileName = ts.findConfigFile(searchPath, ts.sys.fileExists, baseName);
-  assert.ok(fileName, "fileName");
-  const readConfigFileResult = ts.readConfigFile(fileName, ts.sys.readFile);
+export function loadProgramFromTsConfigFile(
+  tsConfigFileName: string | undefined,
+): ts.Program {
+  if (tsConfigFileName === undefined) {
+    const searchPath = path.resolve(".");
+    const tsConfigBaseName = "tsconfig.json";
+    tsConfigFileName = ts.findConfigFile(
+      searchPath,
+      ts.sys.fileExists,
+      tsConfigBaseName,
+    );
+    assert.ok(tsConfigFileName, "fileName");
+  }
+  const readConfigFileResult = ts.readConfigFile(
+    tsConfigFileName,
+    ts.sys.readFile,
+  );
   if (readConfigFileResult.error !== undefined) {
     if (typeof readConfigFileResult.error.messageText === "string") {
       assert.fail(readConfigFileResult.error.messageText);
@@ -18,7 +29,7 @@ export function loadProgramFromTsConfig(): ts.Program {
   const parsedCommandLine = ts.parseJsonConfigFileContent(
     readConfigFileResult.config,
     ts.sys,
-    path.dirname(fileName),
+    path.dirname(tsConfigFileName),
   );
   const createProgramOptions: ts.CreateProgramOptions = {
     options: parsedCommandLine.options,
