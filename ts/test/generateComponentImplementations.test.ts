@@ -18,9 +18,15 @@ const fixturesDirPath = path.resolve(
 
 describe("generateComponentImplementations", () => {
   for (const fixtureDirBase of fs.readdirSync(fixturesDirPath)) {
+    const fixtureDirPath = path.resolve(fixturesDirPath, fixtureDirBase);
+    if (!fs.lstatSync(fixtureDirPath).isDirectory()) {
+      continue;
+    }
+
     beforeEach(() => {
       memfs.vol.reset();
     });
+
     it(fixtureDirBase, () => {
       const tsConfigFilePath = path.resolve(
         fixturesDirPath,
@@ -68,9 +74,7 @@ function buildSystem(): ts.System {
       assert.fail("Not implemented");
     },
     resolvePath: ts.sys.resolvePath,
-    fileExists() {
-      assert.fail("Not implemented");
-    },
+    fileExists: ts.sys.fileExists,
     directoryExists() {
       assert.fail("Not implemented");
     },
