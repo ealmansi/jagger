@@ -3,7 +3,11 @@
   "version": "0.1.21",
   "description": "WIP",
   "files": [
-    "./js"
+    "./js",
+    "!*.test.js",
+    "!*.test.js.map",
+    "!*.test.d.ts",
+    "!*.test.d.ts.map"
   ],
   "type": "module",
   "main": "./js/index.js",
@@ -11,7 +15,7 @@
     ".": "./js/index.js"
   },
   "bin": {
-    "jagger-generate": "./js/generate.js"
+    "jagger-generate": "./js/bin/generate.js"
   },
   "repository": {
     "type": "git",
@@ -27,18 +31,20 @@
   },
   "homepage": "https://github.com/ealmansi/jagger#readme",
   "engines": {
-    "node": ">=18.15"
+    "node": ">=20"
   },
   "devDependencies": {
     "@types/node": "^20.12.7",
-    "prettier": "^3.0.3",
+    "prettier": "^3.2.5",
     "rimraf": "^5.0.5",
+    "ts-node": "^10.9.2",
     "typescript": "^5.4.4"
   },
   "scripts": {
     "build": "tsc --build",
     "dev": "tsc --build --watch",
-    "clean": "tsc --build --clean",
+    "test": "node --test",
+    "clean": "tsc --build --clean && rimraf ./js ./tsconfig.tsbuildinfo",
     "format": "prettier --write ./ts"
   }
 }
