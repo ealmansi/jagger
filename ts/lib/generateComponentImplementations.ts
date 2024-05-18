@@ -5,9 +5,9 @@ import { writeBundle } from "./writeBundle.js";
 
 export function generateComponentImplementations(
   system: ts.System,
-  tsConfigFileName: string | undefined,
+  tsConfigFilePath: string | undefined,
 ) {
-  const program = loadProgramFromTsConfigFile(system, tsConfigFileName);
+  const program = loadProgramFromTsConfigFile(system, tsConfigFilePath);
   const componentImplementationsBundle =
     createComponentImplementationsBundle(program);
   writeBundle(system, componentImplementationsBundle);

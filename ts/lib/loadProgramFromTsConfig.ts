@@ -4,20 +4,15 @@ import assert from "node:assert/strict";
 
 export function loadProgramFromTsConfigFile(
   system: ts.System,
-  tsConfigFileName: string | undefined,
+  tsConfigFilePath: string | undefined,
 ): ts.Program {
-  if (tsConfigFileName === undefined) {
-    const searchPath = path.resolve(".");
-    const tsConfigBaseName = "tsconfig.json";
-    tsConfigFileName = ts.findConfigFile(
-      searchPath,
-      system.fileExists,
-      tsConfigBaseName,
-    );
-    assert.ok(tsConfigFileName, "fileName");
+  if (tsConfigFilePath === undefined) {
+    const searchPath = system.resolvePath(system.getCurrentDirectory());
+    tsConfigFilePath = ts.findConfigFile(searchPath, system.fileExists);
+    assert.ok(tsConfigFilePath, "Could not find tsconfig.json file");
   }
   const readConfigFileResult = ts.readConfigFile(
-    tsConfigFileName,
+    tsConfigFilePath,
     system.readFile,
   );
   if (readConfigFileResult.error !== undefined) {
@@ -30,7 +25,7 @@ export function loadProgramFromTsConfigFile(
   const parsedCommandLine = ts.parseJsonConfigFileContent(
     readConfigFileResult.config,
     system,
-    path.dirname(tsConfigFileName),
+    path.dirname(tsConfigFilePath),
   );
   const createProgramOptions: ts.CreateProgramOptions = {
     options: parsedCommandLine.options,

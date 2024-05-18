@@ -1,26 +1,26 @@
-import ts from "typescript";
-import path from "node:path";
 import assert from "node:assert/strict";
+import path from "node:path";
+import ts from "typescript";
 import { Graph, buildGraph } from "./buildGraph.js";
 import {
-  GraphResolution,
+  Resolution,
   TypeResolution,
-  buildGraphResolution,
-} from "./buildGraphResolution.js";
-import { ok } from "./ok.js";
+  buildResolution,
+} from "./computeResolution.js";
+import { orThrow } from "./orThrow.js";
 
 export function createComponentImplementationsBundle(
   program: ts.Program,
 ): ts.Bundle {
   const factory = ts.factory;
+  const typeChecker = program.getTypeChecker();
   const graph = buildGraph(program);
-  const graphResolution = buildGraphResolution(program, graph);
+  const resolution = buildResolution(typeChecker, graph);
   return factory.createBundle(
     graph.components.map((component) => {
       return createComponentImplementationSourceFile(
-        program,
         graph,
-        graphResolution,
+        resolution,
         component,
       );
     }),
@@ -28,9 +28,8 @@ export function createComponentImplementationsBundle(
 }
 
 function createComponentImplementationSourceFile(
-  program: ts.Program,
   graph: Graph,
-  graphResolution: GraphResolution,
+  resolution: Resolution,
   component: ts.ClassDeclaration,
 ): ts.SourceFile {
   const factory = ts.factory;
@@ -44,18 +43,11 @@ function createComponentImplementationSourceFile(
   const outputSourceFile = factory.createSourceFile(
     [
       ...createComponentImportDeclarations(
-        program,
-        graph,
-        graphResolution,
+        resolution,
         component,
         outputFileName,
       ),
-      createComponentClassDeclaration(
-        program,
-        graph,
-        graphResolution,
-        component,
-      ),
+      createComponentClassDeclaration(graph, resolution, component),
     ],
     factory.createToken(ts.SyntaxKind.EndOfFileToken),
     ts.NodeFlags.None,
@@ -65,15 +57,13 @@ function createComponentImplementationSourceFile(
 }
 
 function createComponentImportDeclarations(
-  _program: ts.Program,
-  _graph: Graph,
-  graphResolution: GraphResolution,
+  resolution: Resolution,
   component: ts.ClassDeclaration,
   outputFileName: string,
 ): ts.ImportDeclaration[] {
   const factory = ts.factory;
-  const moduleInstances = ok(
-    graphResolution.componentModuleInstances.get(component),
+  const moduleInstances = orThrow(
+    resolution.componentModuleInstances.get(component),
   );
   return [component, ...moduleInstances].map((componentOrModule) => {
     const sourceFile = componentOrModule.getSourceFile();
@@ -108,20 +98,19 @@ function createComponentImportDeclarations(
 }
 
 function createComponentClassDeclaration(
-  _program: ts.Program,
   graph: Graph,
-  graphResolution: GraphResolution,
+  resolution: Resolution,
   component: ts.ClassDeclaration,
 ): ts.ClassDeclaration {
   const factory = ts.factory;
   assert.ok(component.name, "component.name");
   const resolvers = graph.componentResolvers.get(component);
   assert.ok(resolvers, "resolvers");
-  const moduleInstances = ok(
-    graphResolution.componentModuleInstances.get(component),
+  const moduleInstances = orThrow(
+    resolution.componentModuleInstances.get(component),
   );
-  const typeResolutions = ok(
-    graphResolution.componentTypeResolutions.get(component),
+  const typeResolutions = orThrow(
+    resolution.componentTypeResolutions.get(component),
   );
   const typeResolutionNames = new Set<string>();
   const syntheticTypeResolutionName = new Map<TypeResolution, string>();
@@ -147,8 +136,8 @@ function createComponentClassDeclaration(
         assert.ok(resolverReturnType, "resolverReturnType");
         const module = graph.componentModule.get(component);
         assert.ok(module, "module");
-        const typeResolution = ok(
-          graphResolution.resolverTypeResolution.get(resolver),
+        const typeResolution = orThrow(
+          resolution.resolverTypeResolution.get(resolver),
         );
         return factory.createMethodDeclaration(
           undefined,
@@ -181,10 +170,9 @@ function createComponentClassDeclaration(
         );
       }),
       ...moduleInstances.map((moduleInstance) => {
-        assert.ok(moduleInstance.name, "module.name");
         return factory.createPropertyDeclaration(
           [factory.createToken(ts.SyntaxKind.PrivateKeyword)],
-          factory.createIdentifier("_" + moduleInstance.name.text),
+          factory.createIdentifier(buildModuleInstanceName(moduleInstance)),
           undefined,
           undefined,
           undefined,
@@ -203,16 +191,17 @@ function createComponentClassDeclaration(
               ),
             ),
             ...moduleInstances.map((moduleInstance) => {
-              assert.ok(moduleInstance.name, "module.name");
               return factory.createExpressionStatement(
                 factory.createBinaryExpression(
                   factory.createPropertyAccessExpression(
                     factory.createThis(),
-                    factory.createIdentifier("_" + moduleInstance.name.text),
+                    factory.createIdentifier(
+                      buildModuleInstanceName(moduleInstance),
+                    ),
                   ),
                   factory.createToken(ts.SyntaxKind.EqualsToken),
                   factory.createNewExpression(
-                    factory.createIdentifier(moduleInstance.name.text),
+                    factory.createIdentifier(orThrow(moduleInstance.name).text),
                     undefined,
                     [],
                   ),
@@ -251,7 +240,7 @@ function createComponentClassDeclaration(
                           factory.createPropertyAccessExpression(
                             factory.createThis(),
                             factory.createIdentifier(
-                              "_" + ok(typeResolution.module.name).text,
+                              "_" + orThrow(typeResolution.module.name).text,
                             ),
                           ),
                           factory.createIdentifier(
@@ -350,8 +339,7 @@ function buildTypeResolutionName(
   switch (typeResolution.kind) {
     case "ProviderTypeResolution":
       return (
-        "_" +
-        ok(typeResolution.module.name).text +
+        buildModuleInstanceName(typeResolution.module) +
         "_" +
         typeResolution.provider.name.getText()
       );
@@ -363,10 +351,13 @@ function buildTypeResolutionName(
         );
       }
       return (
+        buildModuleInstanceName(typeResolution.module) +
         "_" +
-        ok(typeResolution.module.name).text +
-        "_" +
-        ok(syntheticTypeResolutionName.get(typeResolution))
+        orThrow(syntheticTypeResolutionName.get(typeResolution))
       );
   }
+}
+
+function buildModuleInstanceName(module: ts.ClassDeclaration): string {
+  return "_" + orThrow(module.name).text;
 }

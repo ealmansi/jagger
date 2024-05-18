@@ -6,6 +6,7 @@ import path from "node:path";
 import { beforeEach, describe, it } from "node:test";
 import ts from "typescript";
 import { generateComponentImplementations } from "../lib/generateComponentImplementations.js";
+import { orThrow } from "../lib/orThrow.js";
 
 const fixturesDirPath = path.resolve(
   import.meta.dirname,
@@ -66,9 +67,7 @@ function buildSystem(): ts.System {
     watchDirectory() {
       assert.fail("Not implemented");
     },
-    resolvePath() {
-      assert.fail("Not implemented");
-    },
+    resolvePath: ts.sys.resolvePath,
     fileExists() {
       assert.fail("Not implemented");
     },
@@ -128,9 +127,4 @@ function buildSystem(): ts.System {
       assert.fail("Not implemented");
     },
   };
-}
-
-function orThrow<T extends {}>(value: T | null | undefined): T {
-  assert.ok(value);
-  return value;
 }

@@ -1,12 +1,12 @@
 import ts from "typescript";
 import assert from "node:assert/strict";
-import { ok } from "./ok.js";
+import { orThrow } from "./orThrow.js";
 import { Graph } from "./buildGraph.js";
 
-export interface GraphResolution {
-  resolverTypeResolution: WeakMap<ts.MethodDeclaration, TypeResolution>;
-  componentModuleInstances: WeakMap<ts.ClassDeclaration, ts.ClassDeclaration[]>;
-  componentTypeResolutions: WeakMap<ts.ClassDeclaration, TypeResolution[]>;
+export interface Resolution {
+  resolverTypeResolution: Map<ts.MethodDeclaration, TypeResolution>;
+  componentModuleInstances: Map<ts.ClassDeclaration, ts.ClassDeclaration[]>;
+  componentTypeResolutions: Map<ts.ClassDeclaration, TypeResolution[]>;
 }
 
 export type TypeResolution = ProviderTypeResolution | SetTypeResolution;
@@ -26,38 +26,34 @@ interface SetTypeResolution {
   elementTypeResolutions: TypeResolution[];
 }
 
-export function buildGraphResolution(
-  program: ts.Program,
+export function buildResolution(
+  typeChecker: ts.TypeChecker,
   graph: Graph,
-): GraphResolution {
-  const typeChecker = program.getTypeChecker();
-  const resolverTypeResolution = new WeakMap<
+): Resolution {
+  const resolverTypeResolution = new Map<
     ts.MethodDeclaration,
     TypeResolution
   >();
-  const componentModuleInstances = new WeakMap<
+  const componentModuleInstances = new Map<
     ts.ClassDeclaration,
     ts.ClassDeclaration[]
   >();
-  const componentTypeResolutions = new WeakMap<
+  const componentTypeResolutions = new Map<
     ts.ClassDeclaration,
     TypeResolution[]
   >();
   for (const component of graph.components) {
     componentModuleInstances.set(component, []);
     componentTypeResolutions.set(component, []);
-    const module = ok(graph.componentModule.get(component));
-    const resolvers = ok(graph.componentResolvers.get(component));
+    const module = orThrow(graph.componentModule.get(component));
+    const resolvers = orThrow(graph.componentResolvers.get(component));
     for (const resolver of resolvers) {
-      const returnType = ok(graph.resolverReturnType.get(resolver));
+      const returnType = orThrow(graph.resolverReturnType.get(resolver));
       const moduleStack = [module];
-      const moduleTypeMap = new WeakMap<
-        ts.ClassDeclaration,
-        WeakSet<ts.Type>
-      >();
+      const moduleTypeMap = new Map<ts.ClassDeclaration, WeakSet<ts.Type>>();
       const returnTypeResolutions = Array.from(
         getTypeResolutions(
-          program,
+          typeChecker,
           graph,
           moduleStack,
           moduleTypeMap,
@@ -73,7 +69,7 @@ export function buildGraphResolution(
             " for ",
             resolver.name.getText(),
             " in ",
-            ok(component.name).text,
+            orThrow(component.name).text,
           ].join(""),
         );
       }
@@ -85,22 +81,24 @@ export function buildGraphResolution(
             " for ",
             resolver.name.getText(),
             " in ",
-            ok(component.name).text,
+            orThrow(component.name).text,
             " cannot be resolved unambiguously",
           ].join(""),
         );
       }
-      const returnTypeResolution = ok(returnTypeResolutions.at(0));
+      const returnTypeResolution = orThrow(returnTypeResolutions.at(0));
       resolverTypeResolution.set(resolver, returnTypeResolution);
       for (const typeResolutionModule of getTypeResolutionModules(
         returnTypeResolution,
       )) {
-        ok(componentModuleInstances.get(component)).push(typeResolutionModule);
+        orThrow(componentModuleInstances.get(component)).push(
+          typeResolutionModule,
+        );
       }
       for (const typeResolution of getTypeResolutionTypeResolutions(
         returnTypeResolution,
       )) {
-        ok(componentTypeResolutions.get(component)).push(typeResolution);
+        orThrow(componentTypeResolutions.get(component)).push(typeResolution);
       }
     }
   }
@@ -112,36 +110,37 @@ export function buildGraphResolution(
 }
 
 function* getTypeResolutions(
-  program: ts.Program,
+  typeChecker: ts.TypeChecker,
   graph: Graph,
   moduleStack: ts.ClassDeclaration[],
-  moduleTypeMap: WeakMap<ts.ClassDeclaration, WeakSet<ts.Type>>,
+  moduleTypeMap: Map<ts.ClassDeclaration, WeakSet<ts.Type>>,
   type: ts.Type,
   level: number,
 ): Generator<TypeResolution> {
-  const typeChecker = program.getTypeChecker();
   if (moduleStack.length === 0) {
     return;
   }
-  const module = ok(moduleStack.at(-1));
+  const module = orThrow(moduleStack.at(-1));
   if (!moduleTypeMap.has(module)) {
     moduleTypeMap.set(module, new WeakSet());
   }
-  if (ok(moduleTypeMap.get(module)).has(type)) {
+  if (orThrow(moduleTypeMap.get(module)).has(type)) {
     return;
   }
-  ok(moduleTypeMap.get(module)).add(type);
-  const providers = ok(graph.moduleProviders.get(module));
-  const importedModules = ok(graph.moduleImports.get(module));
+  orThrow(moduleTypeMap.get(module)).add(type);
+  const providers = orThrow(graph.moduleProviders.get(module));
+  const importedModules = orThrow(graph.moduleImports.get(module));
   for (const provider of providers) {
-    const returnType = ok(graph.providerReturnType.get(provider));
+    const returnType = orThrow(graph.providerReturnType.get(provider));
     if (returnType === type) {
-      const parameterTypes = ok(graph.providerParameterTypes.get(provider));
+      const parameterTypes = orThrow(
+        graph.providerParameterTypes.get(provider),
+      );
       const parameterTypeResolutions: TypeResolution[] = [];
       for (const parameterType of parameterTypes) {
         const parameterTypeResolution = Array.from(
           getTypeResolutions(
-            program,
+            typeChecker,
             graph,
             moduleStack,
             moduleTypeMap,
@@ -158,7 +157,7 @@ function* getTypeResolutions(
               " for ",
               provider.name.getText(),
               " in ",
-              ok(module.name).text,
+              orThrow(module.name).text,
             ].join(""),
           );
           break;
@@ -183,14 +182,14 @@ function* getTypeResolutions(
         const typeReference = type as ts.TypeReference;
         const typeArguments = typeChecker.getTypeArguments(typeReference);
         if (typeArguments.length === 1) {
-          const typeArgument = ok(typeArguments.at(0));
+          const typeArgument = orThrow(typeArguments.at(0));
           yield {
             kind: "SetTypeResolution",
             type,
             module,
             elementTypeResolutions: Array.from(
               getTypeResolutions(
-                program,
+                typeChecker,
                 graph,
                 moduleStack,
                 moduleTypeMap,
@@ -206,7 +205,7 @@ function* getTypeResolutions(
   for (const importedModule of importedModules) {
     moduleStack.push(importedModule);
     yield* getTypeResolutions(
-      program,
+      typeChecker,
       graph,
       moduleStack,
       moduleTypeMap,
@@ -217,7 +216,7 @@ function* getTypeResolutions(
   }
   moduleStack.pop();
   yield* getTypeResolutions(
-    program,
+    typeChecker,
     graph,
     moduleStack,
     moduleTypeMap,
@@ -225,7 +224,7 @@ function* getTypeResolutions(
     level + 1,
   );
   moduleStack.push(module);
-  ok(moduleTypeMap.get(module)).delete(type);
+  orThrow(moduleTypeMap.get(module)).delete(type);
 }
 
 function getTypeResolutionModules(

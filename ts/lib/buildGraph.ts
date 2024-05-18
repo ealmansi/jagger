@@ -1,27 +1,27 @@
-import ts from "typescript";
 import assert from "node:assert/strict";
-import { ok } from "./ok.js";
+import ts from "typescript";
+import { orThrow } from "./orThrow.js";
 
 export interface Graph {
   components: ts.ClassDeclaration[];
-  componentModule: WeakMap<ts.ClassDeclaration, ts.ClassDeclaration>;
-  componentResolvers: WeakMap<ts.ClassDeclaration, ts.MethodDeclaration[]>;
-  resolverReturnType: WeakMap<ts.MethodDeclaration, ts.Type>;
+  componentModule: Map<ts.ClassDeclaration, ts.ClassDeclaration>;
+  componentResolvers: Map<ts.ClassDeclaration, ts.MethodDeclaration[]>;
+  resolverReturnType: Map<ts.MethodDeclaration, ts.Type>;
   modules: ts.ClassDeclaration[];
-  moduleImports: WeakMap<ts.ClassDeclaration, ts.ClassDeclaration[]>;
-  moduleProviders: WeakMap<
+  moduleImports: Map<ts.ClassDeclaration, ts.ClassDeclaration[]>;
+  moduleProviders: Map<
     ts.ClassDeclaration,
     (ts.PropertyDeclaration | ts.MethodDeclaration)[]
   >;
-  providerModule: WeakMap<
+  providerModule: Map<
     ts.PropertyDeclaration | ts.MethodDeclaration,
     ts.ClassDeclaration
   >;
-  providerParameterTypes: WeakMap<
+  providerParameterTypes: Map<
     ts.PropertyDeclaration | ts.MethodDeclaration,
     ts.Type[]
   >;
-  providerReturnType: WeakMap<
+  providerReturnType: Map<
     ts.PropertyDeclaration | ts.MethodDeclaration,
     ts.Type
   >;
@@ -30,11 +30,8 @@ export interface Graph {
 export function buildGraph(program: ts.Program): Graph {
   const components = getComponents(program);
   const modules = getModules(program);
-  const componentModule = new WeakMap<
-    ts.ClassDeclaration,
-    ts.ClassDeclaration
-  >();
-  const componentResolvers = new WeakMap<
+  const componentModule = new Map<ts.ClassDeclaration, ts.ClassDeclaration>();
+  const componentResolvers = new Map<
     ts.ClassDeclaration,
     ts.MethodDeclaration[]
   >();
@@ -45,7 +42,7 @@ export function buildGraph(program: ts.Program): Graph {
       getComponentResolvers(program, component),
     );
   }
-  const resolverReturnType = new WeakMap<ts.MethodDeclaration, ts.Type>();
+  const resolverReturnType = new Map<ts.MethodDeclaration, ts.Type>();
   for (const component of components) {
     const resolvers = componentResolvers.get(component);
     assert.ok(resolvers, "resolvers");
@@ -56,11 +53,8 @@ export function buildGraph(program: ts.Program): Graph {
       );
     }
   }
-  const moduleImports = new WeakMap<
-    ts.ClassDeclaration,
-    ts.ClassDeclaration[]
-  >();
-  const moduleProviders = new WeakMap<
+  const moduleImports = new Map<ts.ClassDeclaration, ts.ClassDeclaration[]>();
+  const moduleProviders = new Map<
     ts.ClassDeclaration,
     (ts.PropertyDeclaration | ts.MethodDeclaration)[]
   >();
@@ -68,15 +62,15 @@ export function buildGraph(program: ts.Program): Graph {
     moduleImports.set(module, getModuleImports(program, module));
     moduleProviders.set(module, getModuleProviders(program, module));
   }
-  const providerModule = new WeakMap<
+  const providerModule = new Map<
     ts.PropertyDeclaration | ts.MethodDeclaration,
     ts.ClassDeclaration
   >();
-  const providerParameterTypes = new WeakMap<
+  const providerParameterTypes = new Map<
     ts.PropertyDeclaration | ts.MethodDeclaration,
     ts.Type[]
   >();
-  const providerReturnType = new WeakMap<
+  const providerReturnType = new Map<
     ts.PropertyDeclaration | ts.MethodDeclaration,
     ts.Type
   >();
@@ -134,7 +128,7 @@ function isComponent(classDeclaration: ts.ClassDeclaration): boolean {
         heritageClause.token === ts.SyntaxKind.ExtendsKeyword &&
         heritageClause.types.length === 1
       ) {
-        const expressionWithTypeArguments = ok(heritageClause.types.at(0));
+        const expressionWithTypeArguments = orThrow(heritageClause.types.at(0));
         return (
           ts.isPropertyAccessExpression(
             expressionWithTypeArguments.expression,
@@ -172,7 +166,7 @@ function isModule(classDeclaration: ts.ClassDeclaration): boolean {
         heritageClause.token === ts.SyntaxKind.ExtendsKeyword &&
         heritageClause.types.length === 1
       ) {
-        const expressionWithTypeArguments = ok(heritageClause.types.at(0));
+        const expressionWithTypeArguments = orThrow(heritageClause.types.at(0));
         return (
           ts.isPropertyAccessExpression(
             expressionWithTypeArguments.expression,
@@ -289,7 +283,7 @@ function getProviderParameterTypes(
       .getTypeAtLocation(provider)
       .getCallSignatures();
     assert.ok(signatures.length === 1, "signatures.length === 1");
-    const signature = ok(signatures.at(0));
+    const signature = orThrow(signatures.at(0));
     const parameterSymbols = signature.getParameters();
     const parameterDeclarations = signature.getDeclaration().parameters;
     assert.ok(
@@ -298,7 +292,7 @@ function getProviderParameterTypes(
     );
     return parameterSymbols.flatMap((parameterSymbol, index) => {
       const type = typeChecker.getTypeOfSymbol(parameterSymbol);
-      const parameterDeclaration = ok(parameterDeclarations[index]);
+      const parameterDeclaration = orThrow(parameterDeclarations[index]);
       if (parameterDeclaration.dotDotDotToken !== undefined) {
         if (type.getFlags() & ts.TypeFlags.Object) {
           const objectType = type as ts.ObjectType;
@@ -339,7 +333,7 @@ function getProviderReturnType(
       .getTypeAtLocation(provider)
       .getCallSignatures();
     assert.ok(signatures.length === 1, "signatures.length === 1");
-    const signature = ok(signatures.at(0));
+    const signature = orThrow(signatures.at(0));
     return signature.getReturnType();
   } else {
     const typeNode = provider.type;
