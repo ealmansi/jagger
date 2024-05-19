@@ -283,11 +283,18 @@ function getModuleRequiredTypes(
     )
     .map((propertyDeclaration) => propertyDeclaration.type)
     .filter(isNotUndefined)
-    .filter(ts.isTupleTypeNode)
-    .flatMap((tupleTypeNode) => tupleTypeNode.elements)
-    .filter(ts.isTypeReferenceNode)
-    .map((typeReferenceNode) => typeReferenceNode.typeName)
-    .map(typeChecker.getTypeAtLocation);
+    .map(typeChecker.getTypeAtLocation)
+    .flatMap((type) => {
+      if (type.getFlags() & ts.TypeFlags.Object) {
+        const objectType = type as ts.ObjectType;
+        if (objectType.objectFlags & ts.ObjectFlags.Reference) {
+          const typeReference = type as ts.TypeReference;
+          const typeArguments = typeChecker.getTypeArguments(typeReference);
+          return typeArguments;
+        }
+      }
+      return [];
+    });
   return new Set(types);
 }
 
