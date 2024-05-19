@@ -8,49 +8,46 @@ import ts from "typescript";
 import { generateComponentImplementations } from "../lib/generateComponentImplementations.js";
 import { orThrow } from "../lib/orThrow.js";
 
-const fixturesDirPath = path.resolve(
-  import.meta.dirname,
-  "..",
-  "..",
-  "fixtures",
-  "generateComponentImplementations",
-);
+describe("fixtures", () => {
+  const system = buildSystem();
+  const fixturesDirPath = path.resolve(
+    import.meta.dirname,
+    "..",
+    "..",
+    "fixtures",
+  );
 
-describe("generateComponentImplementations", () => {
+  beforeEach(() => {
+    memfs.vol.reset();
+  });
+
   for (const fixtureDirBase of fs.readdirSync(fixturesDirPath)) {
     const fixtureDirPath = path.resolve(fixturesDirPath, fixtureDirBase);
-    if (!fs.lstatSync(fixtureDirPath).isDirectory()) {
-      continue;
+    if (fs.lstatSync(fixtureDirPath).isDirectory()) {
+      it(fixtureDirBase, () => {
+        const tsConfigFilePath = path.resolve(
+          fixturesDirPath,
+          fixtureDirBase,
+          "tsconfig.json",
+        );
+        generateComponentImplementations(system, tsConfigFilePath);
+        const directoryJson = memfs.vol.toJSON();
+        for (const filePath in directoryJson) {
+          const actualFile = orThrow(directoryJson[filePath]);
+          const expectedFile = orThrow(system.readFile(filePath));
+          const diff = gitDiff(expectedFile, actualFile, { color: true });
+          assert.ok(diff === undefined, diff);
+        }
+      });
     }
-
-    beforeEach(() => {
-      memfs.vol.reset();
-    });
-
-    it(fixtureDirBase, () => {
-      const tsConfigFilePath = path.resolve(
-        fixturesDirPath,
-        fixtureDirBase,
-        "tsconfig.json",
-      );
-      const system = buildSystem();
-      generateComponentImplementations(system, tsConfigFilePath);
-      const directoryJson = memfs.vol.toJSON();
-      for (const filePath in directoryJson) {
-        const actualFile = orThrow(directoryJson[filePath]);
-        const expectedFile = orThrow(system.readFile(filePath));
-        const diff = gitDiff(expectedFile, actualFile, { color: true });
-        assert.ok(diff === undefined, diff);
-      }
-    });
   }
 });
 
 function buildSystem(): ts.System {
   return {
-    args: [],
-    newLine: "\n",
-    useCaseSensitiveFileNames: true,
+    args: ts.sys.args,
+    newLine: ts.sys.newLine,
+    useCaseSensitiveFileNames: ts.sys.useCaseSensitiveFileNames,
     write() {
       assert.fail("Not implemented");
     },
