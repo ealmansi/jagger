@@ -55,15 +55,17 @@ export function buildResolution(
     for (const resolver of resolvers) {
       const returnType = orThrow(graph.resolverReturnType.get(resolver));
       const moduleStack = [module];
-      const moduleTypeMap = new Map<ts.ClassDeclaration, Set<ts.Type>>();
+      const moduleUnresolvedTypes = new Map<
+        ts.ClassDeclaration,
+        Set<ts.Type>
+      >();
       const returnTypeResolutions = Array.from(
         getTypeResolutions(
           typeChecker,
           graph,
           moduleStack,
-          moduleTypeMap,
           returnType,
-          0,
+          moduleUnresolvedTypes,
         ),
       );
       if (returnTypeResolutions.length === 0) {
@@ -124,122 +126,196 @@ function* getTypeResolutions(
   typeChecker: ts.TypeChecker,
   graph: Graph,
   moduleStack: ts.ClassDeclaration[],
-  moduleTypeMap: Map<ts.ClassDeclaration, Set<ts.Type>>,
   type: ts.Type,
-  level: number,
+  moduleUnresolvedTypes: Map<ts.ClassDeclaration, Set<ts.Type>>,
 ): Generator<TypeResolution> {
   if (moduleStack.length === 0) {
     return;
   }
   const module = orThrow(moduleStack.at(-1));
-  if (!moduleTypeMap.has(module)) {
-    moduleTypeMap.set(module, new Set());
+  if (!moduleUnresolvedTypes.has(module)) {
+    moduleUnresolvedTypes.set(module, new Set());
   }
-  if (orThrow(moduleTypeMap.get(module)).has(type)) {
+  const unresolvedTypes = orThrow(moduleUnresolvedTypes.get(module));
+  if (unresolvedTypes.has(type)) {
     return;
   }
-  orThrow(moduleTypeMap.get(module)).add(type);
+  unresolvedTypes.add(type);
   using _ = {
     [Symbol.dispose]: () => {
-      orThrow(moduleTypeMap.get(module)).delete(type);
+      unresolvedTypes.delete(type);
+      if (unresolvedTypes.size === 0) {
+        moduleUnresolvedTypes.delete(module);
+      }
     },
   };
+  yield* getProviderTypeResolutions(
+    typeChecker,
+    graph,
+    moduleStack,
+    type,
+    moduleUnresolvedTypes,
+  );
+  yield* getSetTypeResolutions(
+    typeChecker,
+    graph,
+    moduleStack,
+    type,
+    moduleUnresolvedTypes,
+  );
+  yield* getImportedTypeResolutions(
+    typeChecker,
+    graph,
+    moduleStack,
+    type,
+    moduleUnresolvedTypes,
+  );
+  yield* getParentTypeResolutions(
+    typeChecker,
+    graph,
+    moduleStack,
+    type,
+    moduleUnresolvedTypes,
+  );
+}
+
+function* getProviderTypeResolutions(
+  typeChecker: ts.TypeChecker,
+  graph: Graph,
+  moduleStack: ts.ClassDeclaration[],
+  type: ts.Type,
+  moduleUnresolvedTypes: Map<ts.ClassDeclaration, Set<ts.Type>>,
+): Generator<TypeResolution> {
+  const module = orThrow(moduleStack.at(-1));
   const providers = orThrow(graph.moduleProviders.get(module));
-  const importedModules = orThrow(graph.moduleImports.get(module));
   for (const provider of providers) {
     const returnType = orThrow(graph.providerReturnType.get(provider));
-    if (typesAreConsideredEqual(typeChecker, returnType, type)) {
-      const parameterTypes = orThrow(
-        graph.providerParameterTypes.get(provider),
+    if (!typesAreConsideredEqual(typeChecker, returnType, type)) {
+      continue;
+    }
+    const parameterTypes = orThrow(graph.providerParameterTypes.get(provider));
+    const parameterTypeResolutions: TypeResolution[] = [];
+    for (const parameterType of parameterTypes) {
+      const typeResolutions = Array.from(
+        getTypeResolutions(
+          typeChecker,
+          graph,
+          moduleStack,
+          parameterType,
+          moduleUnresolvedTypes,
+        ),
       );
-      const parameterTypeResolutions: TypeResolution[] = [];
-      for (const parameterType of parameterTypes) {
-        const typeResolutions = Array.from(
-          getTypeResolutions(
-            typeChecker,
-            graph,
-            moduleStack,
-            moduleTypeMap,
-            parameterType,
-            level + 1,
-          ),
+      if (typeResolutions.length === 0) {
+        console.log(
+          [
+            "could not satisfy ",
+            typeChecker.typeToString(parameterType),
+            " for ",
+            provider.name.getText(),
+            " in ",
+            orThrow(module.name).text,
+          ].join(""),
         );
-        if (typeResolutions.length === 0) {
-          console.log(
-            [
-              " ".repeat(level),
-              "could not satisfy ",
-              typeChecker.typeToString(parameterType),
-              " for ",
-              provider.name.getText(),
-              " in ",
-              orThrow(module.name).text,
-            ].join(""),
-          );
-          break;
-        }
-        const typeResolution = orThrow(typeResolutions.at(0));
-        parameterTypeResolutions.push(typeResolution);
+        break;
       }
-      if (parameterTypes.length === parameterTypeResolutions.length) {
-        yield {
-          kind: "ProviderTypeResolution",
-          type,
-          module,
-          provider,
-          parameterTypeResolutions,
-        };
-      }
+      const typeResolution = orThrow(typeResolutions.at(0));
+      parameterTypeResolutions.push(typeResolution);
     }
+    if (parameterTypes.length !== parameterTypeResolutions.length) {
+      continue;
+    }
+    yield {
+      kind: "ProviderTypeResolution",
+      type,
+      module,
+      provider,
+      parameterTypeResolutions,
+    };
   }
+}
+
+function* getSetTypeResolutions(
+  typeChecker: ts.TypeChecker,
+  graph: Graph,
+  moduleStack: ts.ClassDeclaration[],
+  type: ts.Type,
+  moduleUnresolvedTypes: Map<ts.ClassDeclaration, Set<ts.Type>>,
+): Generator<TypeResolution> {
+  const module = orThrow(moduleStack.at(-1));
   const typeSymbol = type.getSymbol();
-  if (typeSymbol !== undefined && typeSymbol.getName() === "Set") {
-    if (type.getFlags() & ts.TypeFlags.Object) {
-      const objectType = type as ts.ObjectType;
-      if (objectType.objectFlags & ts.ObjectFlags.Reference) {
-        const typeReference = type as ts.TypeReference;
-        const typeArguments = typeChecker.getTypeArguments(typeReference);
-        if (typeArguments.length === 1) {
-          const typeArgument = orThrow(typeArguments.at(0));
-          yield {
-            kind: "SetTypeResolution",
-            type,
-            module,
-            elementTypeResolutions: Array.from(
-              getTypeResolutions(
-                typeChecker,
-                graph,
-                moduleStack,
-                moduleTypeMap,
-                typeArgument,
-                level + 1,
-              ),
-            ),
-          };
-        }
-      }
-    }
+  if (typeSymbol === undefined) {
+    return;
   }
+  if (typeSymbol.getName() !== "Set") {
+    return;
+  }
+  if ((type.getFlags() & ts.TypeFlags.Object) === 0) {
+    return;
+  }
+  const objectType = type as ts.ObjectType;
+  if ((objectType.objectFlags & ts.ObjectFlags.Reference) === 0) {
+    return;
+  }
+  const typeReference = type as ts.TypeReference;
+  const typeArguments = typeChecker.getTypeArguments(typeReference);
+  if (typeArguments.length !== 1) {
+    return;
+  }
+  const typeArgument = orThrow(typeArguments.at(0));
+  const elementTypeResolutions = Array.from(
+    getTypeResolutions(
+      typeChecker,
+      graph,
+      moduleStack,
+      typeArgument,
+      moduleUnresolvedTypes,
+    ),
+  );
+  yield {
+    kind: "SetTypeResolution",
+    type,
+    module,
+    elementTypeResolutions,
+  };
+}
+
+function* getImportedTypeResolutions(
+  typeChecker: ts.TypeChecker,
+  graph: Graph,
+  moduleStack: ts.ClassDeclaration[],
+  type: ts.Type,
+  moduleUnresolvedTypes: Map<ts.ClassDeclaration, Set<ts.Type>>,
+): Generator<TypeResolution> {
+  const module = orThrow(moduleStack.at(-1));
+  const importedModules = orThrow(graph.moduleImports.get(module));
   for (const importedModule of importedModules) {
     moduleStack.push(importedModule);
     yield* getTypeResolutions(
       typeChecker,
       graph,
       moduleStack,
-      moduleTypeMap,
       type,
-      level + 1,
+      moduleUnresolvedTypes,
     );
     moduleStack.pop();
   }
+}
+
+function* getParentTypeResolutions(
+  typeChecker: ts.TypeChecker,
+  graph: Graph,
+  moduleStack: ts.ClassDeclaration[],
+  type: ts.Type,
+  moduleUnresolvedTypes: Map<ts.ClassDeclaration, Set<ts.Type>>,
+): Generator<TypeResolution> {
+  const module = orThrow(moduleStack.at(-1));
   moduleStack.pop();
   yield* getTypeResolutions(
     typeChecker,
     graph,
     moduleStack,
-    moduleTypeMap,
     type,
-    level + 1,
+    moduleUnresolvedTypes,
   );
   moduleStack.push(module);
 }
