@@ -55,7 +55,7 @@ export function buildResolution(
     for (const resolver of resolvers) {
       const returnType = orThrow(graph.resolverReturnType.get(resolver));
       const moduleStack = [module];
-      const moduleTypeMap = new Map<ts.ClassDeclaration, WeakSet<ts.Type>>();
+      const moduleTypeMap = new Map<ts.ClassDeclaration, Set<ts.Type>>();
       const returnTypeResolutions = Array.from(
         getTypeResolutions(
           typeChecker,
@@ -124,7 +124,7 @@ function* getTypeResolutions(
   typeChecker: ts.TypeChecker,
   graph: Graph,
   moduleStack: ts.ClassDeclaration[],
-  moduleTypeMap: Map<ts.ClassDeclaration, WeakSet<ts.Type>>,
+  moduleTypeMap: Map<ts.ClassDeclaration, Set<ts.Type>>,
   type: ts.Type,
   level: number,
 ): Generator<TypeResolution> {
@@ -133,7 +133,7 @@ function* getTypeResolutions(
   }
   const module = orThrow(moduleStack.at(-1));
   if (!moduleTypeMap.has(module)) {
-    moduleTypeMap.set(module, new WeakSet());
+    moduleTypeMap.set(module, new Set());
   }
   if (orThrow(moduleTypeMap.get(module)).has(type)) {
     return;
