@@ -170,13 +170,16 @@ function* getTypeResolutions(
     type,
     moduleUnresolvedTypes,
   );
-  yield* getParentTypeResolutions(
-    typeChecker,
-    graph,
-    moduleStack,
-    type,
-    moduleUnresolvedTypes,
-  );
+  const requiredTypes = orThrow(graph.moduleRequiredTypes.get(module));
+  if (requiredTypes.has(type)) {
+    yield* getParentTypeResolutions(
+      typeChecker,
+      graph,
+      moduleStack,
+      type,
+      moduleUnresolvedTypes,
+    );
+  }
 }
 
 function* getProviderTypeResolutions(
@@ -287,9 +290,9 @@ function* getImportedTypeResolutions(
   moduleUnresolvedTypes: Map<ts.ClassDeclaration, Set<ts.Type>>,
 ): Generator<TypeResolution> {
   const module = orThrow(moduleStack.at(-1));
-  const importedModules = orThrow(graph.moduleImports.get(module));
-  for (const importedModule of importedModules) {
-    moduleStack.push(importedModule);
+  const incudedModules = orThrow(graph.moduleIncludedModules.get(module));
+  for (const includedModule of incudedModules) {
+    moduleStack.push(includedModule);
     yield* getTypeResolutions(
       typeChecker,
       graph,

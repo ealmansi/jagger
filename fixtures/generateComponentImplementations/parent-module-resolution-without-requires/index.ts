@@ -1,34 +1,25 @@
 import { Jagger } from "@ealmansi/jagger";
 
 class T1 {}
-class T2 {}
-class T3 {}
-class T4 {}
+class T2 {
+  constructor(_: Set<T1>) {}
+}
 
 export class Module1 extends Jagger.Module {
   static includes: [Module2];
-  p1(): T1 {
-    return new T1();
-  }
-  p2(_: T3): T2 {
-    return new T2();
-  }
+  p1 = Jagger.instance(T1);
 }
 
 export class Module2 extends Jagger.Module {
-  static includes: [Module1];
-  p3(): T3 {
-    return new T3();
-  }
-  p4(_: T1): T4 {
-    return new T4();
-  }
+  p1 = Jagger.instance(T1);
+  p2 = Jagger.instance(T2);
 }
 
+/**
+ * T2 will be constructed only with the T1 instance
+ * from Module2, ignorning the one from Module1.
+ */
 export abstract class Component extends Jagger.Component {
   static module: Module1;
-  abstract t1(): T1;
   abstract t2(): T2;
-  abstract t3(): T3;
-  abstract t4(): T4;
 }

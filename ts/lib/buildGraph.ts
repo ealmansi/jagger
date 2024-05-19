@@ -8,7 +8,8 @@ export interface Graph {
   componentResolvers: Map<ts.ClassDeclaration, ts.MethodDeclaration[]>;
   resolverReturnType: Map<ts.MethodDeclaration, ts.Type>;
   modules: ts.ClassDeclaration[];
-  moduleImports: Map<ts.ClassDeclaration, ts.ClassDeclaration[]>;
+  moduleIncludedModules: Map<ts.ClassDeclaration, ts.ClassDeclaration[]>;
+  moduleRequiredTypes: Map<ts.ClassDeclaration, Set<ts.Type>>;
   moduleProviders: Map<
     ts.ClassDeclaration,
     (ts.PropertyDeclaration | ts.MethodDeclaration)[]
@@ -53,13 +54,21 @@ export function buildGraph(program: ts.Program): Graph {
       );
     }
   }
-  const moduleImports = new Map<ts.ClassDeclaration, ts.ClassDeclaration[]>();
+  const moduleIncludedModules = new Map<
+    ts.ClassDeclaration,
+    ts.ClassDeclaration[]
+  >();
+  const moduleRequiredTypes = new Map<ts.ClassDeclaration, Set<ts.Type>>();
   const moduleProviders = new Map<
     ts.ClassDeclaration,
     (ts.PropertyDeclaration | ts.MethodDeclaration)[]
   >();
   for (const module of modules) {
-    moduleImports.set(module, getModuleImports(program, module));
+    moduleIncludedModules.set(
+      module,
+      getModuleIncludedModules(program, module),
+    );
+    moduleRequiredTypes.set(module, getModuleRequiredTypes(program, module));
     moduleProviders.set(module, getModuleProviders(program, module));
   }
   const providerModule = new Map<
@@ -95,7 +104,8 @@ export function buildGraph(program: ts.Program): Graph {
     componentResolvers,
     resolverReturnType,
     modules,
-    moduleImports,
+    moduleIncludedModules,
+    moduleRequiredTypes,
     moduleProviders,
     providerModule,
     providerParameterTypes,
@@ -226,7 +236,7 @@ function getComponentResolvers(
     );
 }
 
-function getModuleImports(
+function getModuleIncludedModules(
   program: ts.Program,
   module: ts.ClassDeclaration,
 ): ts.ClassDeclaration[] {
@@ -240,7 +250,7 @@ function getModuleImports(
           (modifierLike) => modifierLike.kind === ts.SyntaxKind.StaticKeyword,
         ) &&
         ts.isIdentifier(propertyDeclaration.name) &&
-        propertyDeclaration.name.text === "imports",
+        propertyDeclaration.name.text === "includes",
     )
     .map((propertyDeclaration) => propertyDeclaration.type)
     .filter(isNotUndefined)
@@ -253,6 +263,32 @@ function getModuleImports(
     .flatMap((symbol) => symbol.getDeclarations())
     .filter(isNotUndefined)
     .filter(ts.isClassDeclaration);
+}
+
+function getModuleRequiredTypes(
+  program: ts.Program,
+  module: ts.ClassDeclaration,
+): Set<ts.Type> {
+  const typeChecker = program.getTypeChecker();
+  const types = module.members
+    .filter(ts.isPropertyDeclaration)
+    .filter(
+      (propertyDeclaration) =>
+        propertyDeclaration.modifiers !== undefined &&
+        propertyDeclaration.modifiers.some(
+          (modifierLike) => modifierLike.kind === ts.SyntaxKind.StaticKeyword,
+        ) &&
+        ts.isIdentifier(propertyDeclaration.name) &&
+        propertyDeclaration.name.text === "requires",
+    )
+    .map((propertyDeclaration) => propertyDeclaration.type)
+    .filter(isNotUndefined)
+    .filter(ts.isTupleTypeNode)
+    .flatMap((tupleTypeNode) => tupleTypeNode.elements)
+    .filter(ts.isTypeReferenceNode)
+    .map((typeReferenceNode) => typeReferenceNode.typeName)
+    .map(typeChecker.getTypeAtLocation);
+  return new Set(types);
 }
 
 function getModuleProviders(
