@@ -66,9 +66,6 @@ export class Module extends Jagger.Module {
   provideMap(): Map<string, number> {
     return new Map().set("a", 1);
   }
-  // provideSet(): Set<string> {
-  //   return new Set(["a", "b", "c"]);
-  // }
 }
 
 export abstract class Component extends Jagger.Component {
@@ -91,5 +88,4 @@ export abstract class Component extends Jagger.Component {
   abstract getObjectShape(): { color: Color; x: number; y: number };
   abstract getRecord(): Record<string, number>;
   abstract getMap(): Map<string, number>;
-  // abstract getSet(): Set<string>;
 }

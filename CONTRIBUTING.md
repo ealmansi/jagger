@@ -2,10 +2,8 @@
 
 ## TODO
 
-- Configurability
 - Reusable Providers
 - Optional Binding
-- Async Providers
 
 ## Publish a new version
 

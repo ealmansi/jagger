@@ -17,6 +17,7 @@ interface ProviderTypeResolution {
   module: ts.ClassDeclaration;
   provider: ts.PropertyDeclaration | ts.MethodDeclaration;
   parameterTypeResolutions: TypeResolution[];
+  requiresAsync: boolean;
 }
 
 interface SetTypeResolution {
@@ -24,6 +25,7 @@ interface SetTypeResolution {
   type: ts.Type;
   module: ts.ClassDeclaration;
   elementTypeResolutions: TypeResolution[];
+  requiresAsync: boolean;
 }
 
 export function buildResolution(
@@ -94,6 +96,22 @@ export function buildResolution(
         );
       }
       const returnTypeResolution = orThrow(returnTypeResolutions.at(0));
+      if (
+        returnTypeResolution.requiresAsync &&
+        returnType === getAwaitedType(typeChecker, returnType)
+      ) {
+        assert.fail(
+          [
+            "Type ",
+            typeChecker.typeToString(returnType),
+            " for ",
+            resolver.name.getText(),
+            " in ",
+            orThrow(component.name).text,
+            " cannot be resolved synchronously",
+          ].join(""),
+        );
+      }
       resolverTypeResolution.set(resolver, returnTypeResolution);
       const moduleInstancesSet = orThrow(
         componentModuleInstancesSet.get(component),
@@ -191,9 +209,15 @@ function* getProviderTypeResolutions(
 ): Generator<TypeResolution> {
   const module = orThrow(moduleStack.at(-1));
   const providers = orThrow(graph.moduleProviders.get(module));
+  const awaitedType = getAwaitedType(typeChecker, type);
   for (const provider of providers) {
     const returnType = orThrow(graph.providerReturnType.get(provider));
-    if (!typesAreConsideredEqual(typeChecker, returnType, type)) {
+    const awaitedReturnType = getAwaitedType(typeChecker, returnType);
+    if (
+      !typesAreConsideredEqual(typeChecker, returnType, type) &&
+      !typesAreConsideredEqual(typeChecker, returnType, awaitedType) &&
+      !typesAreConsideredEqual(typeChecker, awaitedReturnType, type)
+    ) {
       continue;
     }
     const parameterTypes = orThrow(graph.providerParameterTypes.get(provider));
@@ -233,8 +257,37 @@ function* getProviderTypeResolutions(
       module,
       provider,
       parameterTypeResolutions,
+      requiresAsync:
+        returnType !== awaitedReturnType ||
+        parameterTypeResolutions.some(
+          (parameterTypeResolution) => parameterTypeResolution.requiresAsync,
+        ),
     };
   }
+}
+
+function getAwaitedType(typeChecker: ts.TypeChecker, type: ts.Type): ts.Type {
+  const typeSymbol = type.getSymbol();
+  if (typeSymbol === undefined) {
+    return type;
+  }
+  if (typeSymbol.getName() !== "Promise") {
+    return type;
+  }
+  if ((type.getFlags() & ts.TypeFlags.Object) === 0) {
+    return type;
+  }
+  const objectType = type as ts.ObjectType;
+  if ((objectType.objectFlags & ts.ObjectFlags.Reference) === 0) {
+    return type;
+  }
+  const typeReference = type as ts.TypeReference;
+  const typeArguments = typeChecker.getTypeArguments(typeReference);
+  if (typeArguments.length !== 1) {
+    return type;
+  }
+  const typeArgument = orThrow(typeArguments.at(0));
+  return typeArgument;
 }
 
 function* getSetTypeResolutions(
@@ -279,6 +332,9 @@ function* getSetTypeResolutions(
     type,
     module,
     elementTypeResolutions,
+    requiresAsync: elementTypeResolutions.some(
+      (elementTypeResolution) => elementTypeResolution.requiresAsync,
+    ),
   };
 }
 
@@ -331,6 +387,37 @@ function typesAreConsideredEqual(
   if (typeA === typeB) {
     return true;
   }
+  const symbolA = typeA.getSymbol();
+  const symbolB = typeB.getSymbol();
+  if (
+    symbolA !== undefined &&
+    symbolB !== undefined &&
+    symbolA.getName() === symbolB.getName()
+  ) {
+    let objectFlagsA: ts.ObjectFlags | undefined;
+    if (typeA.getFlags() & ts.TypeFlags.Object) {
+      const objectTypeA = typeA as ts.ObjectType;
+      objectFlagsA = objectTypeA.objectFlags;
+    }
+    let objectFlagsB: ts.ObjectFlags | undefined;
+    if (typeB.getFlags() & ts.TypeFlags.Object) {
+      const objectTypeB = typeB as ts.ObjectType;
+      objectFlagsB = objectTypeB.objectFlags;
+    }
+    const typeArgumentsA = getTypeArguments(typeChecker, typeA) ?? [];
+    const typeArgumentsB = getTypeArguments(typeChecker, typeB) ?? [];
+    return (
+      objectFlagsA === objectFlagsB &&
+      typeArgumentsA.length === typeArgumentsB.length &&
+      typeArgumentsA.every((typeArgumentA, index) =>
+        typesAreConsideredEqual(
+          typeChecker,
+          typeArgumentA,
+          orThrow(typeArgumentsB.at(index)),
+        ),
+      )
+    );
+  }
   for (const type of [typeA, typeB]) {
     if ((type.getFlags() & ts.TypeFlags.Any) !== 0) {
       return false;
@@ -349,6 +436,21 @@ function typesAreConsideredEqual(
     typeChecker.isTypeAssignableTo(typeA, typeB) &&
     typeChecker.isTypeAssignableTo(typeB, typeA)
   );
+}
+
+function getTypeArguments(
+  typeChecker: ts.TypeChecker,
+  type: ts.Type,
+): readonly ts.Type[] | undefined {
+  if (type.getFlags() & ts.TypeFlags.Object) {
+    const objectType = type as ts.ObjectType;
+    if (objectType.objectFlags & ts.ObjectFlags.Reference) {
+      const typeReference = type as ts.TypeReference;
+      const typeArguments = typeChecker.getTypeArguments(typeReference);
+      return typeArguments;
+    }
+  }
+  return undefined;
 }
 
 function getTypeResolutionModules(

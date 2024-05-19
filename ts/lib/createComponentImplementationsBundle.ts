@@ -225,7 +225,12 @@ function createComponentClassDeclaration(
             typeResolutionNames.add(typeResolutionName);
             return [
               factory.createMethodDeclaration(
-                [factory.createToken(ts.SyntaxKind.PrivateKeyword)],
+                [
+                  factory.createToken(ts.SyntaxKind.PrivateKeyword),
+                  ...(typeResolution.requiresAsync
+                    ? [factory.createToken(ts.SyntaxKind.AsyncKeyword)]
+                    : []),
+                ],
                 undefined,
                 factory.createIdentifier(typeResolutionName),
                 undefined,
@@ -240,7 +245,7 @@ function createComponentClassDeclaration(
                           factory.createPropertyAccessExpression(
                             factory.createThis(),
                             factory.createIdentifier(
-                              "_" + orThrow(typeResolution.module.name).text,
+                              buildModuleInstanceName(typeResolution.module),
                             ),
                           ),
                           factory.createIdentifier(
@@ -251,19 +256,23 @@ function createComponentClassDeclaration(
                         [
                           ...typeResolution.parameterTypeResolutions.map(
                             (parameterTypeResolution) => {
-                              return factory.createCallExpression(
-                                factory.createPropertyAccessExpression(
-                                  factory.createThis(),
-                                  factory.createIdentifier(
-                                    buildTypeResolutionName(
-                                      parameterTypeResolution,
-                                      syntheticTypeResolutionName,
+                              const callExpression =
+                                factory.createCallExpression(
+                                  factory.createPropertyAccessExpression(
+                                    factory.createThis(),
+                                    factory.createIdentifier(
+                                      buildTypeResolutionName(
+                                        parameterTypeResolution,
+                                        syntheticTypeResolutionName,
+                                      ),
                                     ),
                                   ),
-                                ),
-                                undefined,
-                                [],
-                              );
+                                  undefined,
+                                  [],
+                                );
+                              return parameterTypeResolution.requiresAsync
+                                ? factory.createAwaitExpression(callExpression)
+                                : callExpression;
                             },
                           ),
                         ],
@@ -277,7 +286,12 @@ function createComponentClassDeclaration(
           case "SetTypeResolution":
             return [
               factory.createMethodDeclaration(
-                [factory.createToken(ts.SyntaxKind.PrivateKeyword)],
+                [
+                  factory.createToken(ts.SyntaxKind.PrivateKeyword),
+                  ...(typeResolution.requiresAsync
+                    ? [factory.createToken(ts.SyntaxKind.AsyncKeyword)]
+                    : []),
+                ],
                 undefined,
                 factory.createIdentifier(
                   buildTypeResolutionName(
@@ -300,19 +314,25 @@ function createComponentClassDeclaration(
                             [
                               ...typeResolution.elementTypeResolutions.map(
                                 (elementTypeResolution) => {
-                                  return factory.createCallExpression(
-                                    factory.createPropertyAccessExpression(
-                                      factory.createThis(),
-                                      factory.createIdentifier(
-                                        buildTypeResolutionName(
-                                          elementTypeResolution,
-                                          syntheticTypeResolutionName,
+                                  const callExpression =
+                                    factory.createCallExpression(
+                                      factory.createPropertyAccessExpression(
+                                        factory.createThis(),
+                                        factory.createIdentifier(
+                                          buildTypeResolutionName(
+                                            elementTypeResolution,
+                                            syntheticTypeResolutionName,
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                    undefined,
-                                    [],
-                                  );
+                                      undefined,
+                                      [],
+                                    );
+                                  return elementTypeResolution.requiresAsync
+                                    ? factory.createAwaitExpression(
+                                        callExpression,
+                                      )
+                                    : callExpression;
                                 },
                               ),
                             ],
