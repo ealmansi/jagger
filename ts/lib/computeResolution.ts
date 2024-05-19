@@ -139,17 +139,22 @@ function* getTypeResolutions(
     return;
   }
   orThrow(moduleTypeMap.get(module)).add(type);
+  using _ = {
+    [Symbol.dispose]: () => {
+      orThrow(moduleTypeMap.get(module)).delete(type);
+    },
+  };
   const providers = orThrow(graph.moduleProviders.get(module));
   const importedModules = orThrow(graph.moduleImports.get(module));
   for (const provider of providers) {
     const returnType = orThrow(graph.providerReturnType.get(provider));
-    if (returnType === type) {
+    if (typesAreConsideredEqual(typeChecker, returnType, type)) {
       const parameterTypes = orThrow(
         graph.providerParameterTypes.get(provider),
       );
       const parameterTypeResolutions: TypeResolution[] = [];
       for (const parameterType of parameterTypes) {
-        const parameterTypeResolution = Array.from(
+        const typeResolutions = Array.from(
           getTypeResolutions(
             typeChecker,
             graph,
@@ -158,8 +163,8 @@ function* getTypeResolutions(
             parameterType,
             level + 1,
           ),
-        ).at(0);
-        if (parameterTypeResolution === undefined) {
+        );
+        if (typeResolutions.length === 0) {
           console.log(
             [
               " ".repeat(level),
@@ -173,7 +178,8 @@ function* getTypeResolutions(
           );
           break;
         }
-        parameterTypeResolutions.push(parameterTypeResolution);
+        const typeResolution = orThrow(typeResolutions.at(0));
+        parameterTypeResolutions.push(typeResolution);
       }
       if (parameterTypes.length === parameterTypeResolutions.length) {
         yield {
@@ -186,7 +192,8 @@ function* getTypeResolutions(
       }
     }
   }
-  if (type.symbol.getName() === "Set") {
+  const typeSymbol = type.getSymbol();
+  if (typeSymbol !== undefined && typeSymbol.getName() === "Set") {
     if (type.getFlags() & ts.TypeFlags.Object) {
       const objectType = type as ts.ObjectType;
       if (objectType.objectFlags & ts.ObjectFlags.Reference) {
@@ -235,7 +242,34 @@ function* getTypeResolutions(
     level + 1,
   );
   moduleStack.push(module);
-  orThrow(moduleTypeMap.get(module)).delete(type);
+}
+
+function typesAreConsideredEqual(
+  typeChecker: ts.TypeChecker,
+  typeA: ts.Type,
+  typeB: ts.Type,
+): boolean {
+  if (typeA === typeB) {
+    return true;
+  }
+  for (const type of [typeA, typeB]) {
+    if ((type.getFlags() & ts.TypeFlags.Any) !== 0) {
+      return false;
+    }
+    if ((type.getFlags() & ts.TypeFlags.EnumLike) !== 0) {
+      return false;
+    }
+    if (
+      (type.getFlags() & ts.TypeFlags.Object) !== 0 &&
+      ((type as ts.ObjectType).objectFlags & ts.ObjectFlags.Class) !== 0
+    ) {
+      return false;
+    }
+  }
+  return (
+    typeChecker.isTypeAssignableTo(typeA, typeB) &&
+    typeChecker.isTypeAssignableTo(typeB, typeA)
+  );
 }
 
 function getTypeResolutionModules(
