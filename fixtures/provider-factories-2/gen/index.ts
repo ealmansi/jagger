@@ -7,6 +7,9 @@ export class ComponentImpl extends Component {
     c2() {
         return this._Module_p2();
     }
+    n() {
+        return this._Module_p3();
+    }
     private _Module;
     constructor() {
         super();
@@ -17,5 +20,8 @@ export class ComponentImpl extends Component {
     }
     private _Module_p2() {
         return this._Module.p2();
+    }
+    private _Module_p3() {
+        return this._Module.p3();
     }
 }
