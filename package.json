@@ -37,7 +37,10 @@
     "@types/git-diff": "^2.0.7",
     "@types/node": "^20.12.7",
     "@types/tmp": "^0.2.6",
+    "@typescript-eslint/eslint-plugin": "^7.9.0",
+    "@typescript-eslint/parser": "^7.9.0",
     "commander": "^12.1.0",
+    "eslint": "^8.57.0",
     "git-diff": "^2.0.6",
     "memfs": "^4.9.2",
     "prettier": "^3.2.5",
@@ -48,8 +51,10 @@
   "scripts": {
     "build": "tsc --build",
     "dev": "tsc --build --watch",
-    "test": "tsc --project fixtures/tsconfig.base.json && node --test",
-    "clean": "tsc --build --clean && rimraf ./js ./tsconfig.tsbuildinfo",
-    "format": "prettier --write ./ts"
+    "lint": "eslint .",
+    "format": "prettier --check .",
+    "typecheck-fixtures": "tsc --project fixtures/tsconfig.base.json",
+    "test": "node --test",
+    "clean": "tsc --build --clean && rimraf ./js ./tsconfig.tsbuildinfo"
   }
 }

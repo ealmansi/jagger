@@ -213,12 +213,12 @@ function createComponentClassDeclaration(
         ),
       ),
       ...typeResolutions.flatMap((typeResolution) => {
+        const typeResolutionName = buildTypeResolutionName(
+          typeResolution,
+          syntheticTypeResolutionName,
+        );
         switch (typeResolution.kind) {
           case "ProviderTypeResolution":
-            const typeResolutionName = buildTypeResolutionName(
-              typeResolution,
-              syntheticTypeResolutionName,
-            );
             if (typeResolutionNames.has(typeResolutionName)) {
               return [];
             }
@@ -293,12 +293,7 @@ function createComponentClassDeclaration(
                     : []),
                 ],
                 undefined,
-                factory.createIdentifier(
-                  buildTypeResolutionName(
-                    typeResolution,
-                    syntheticTypeResolutionName,
-                  ),
-                ),
+                factory.createIdentifier(typeResolutionName),
                 undefined,
                 undefined,
                 [],

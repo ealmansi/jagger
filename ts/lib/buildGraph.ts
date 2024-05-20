@@ -399,6 +399,8 @@ function visitSourceFile(sourceFile: ts.SourceFile, visitor: Visitor) {
   visitNode(sourceFile);
 }
 
-function isNotUndefined<T extends {}>(x: T | undefined): x is T {
+function isNotUndefined<T extends NonNullable<unknown>>(
+  x: T | undefined,
+): x is T {
   return x !== undefined;
 }

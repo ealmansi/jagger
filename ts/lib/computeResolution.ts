@@ -57,17 +57,14 @@ export function buildResolution(
     for (const resolver of resolvers) {
       const returnType = orThrow(graph.resolverReturnType.get(resolver));
       const moduleStack = [module];
-      const moduleUnresolvedTypes = new Map<
-        ts.ClassDeclaration,
-        Set<ts.Type>
-      >();
+      const recursionGuard = new Map<ts.ClassDeclaration, Set<ts.Type>>();
       const returnTypeResolutions = Array.from(
         getTypeResolutions(
           typeChecker,
           graph,
           moduleStack,
           returnType,
-          moduleUnresolvedTypes,
+          recursionGuard,
         ),
       );
       if (returnTypeResolutions.length === 0) {
@@ -145,58 +142,71 @@ function* getTypeResolutions(
   graph: Graph,
   moduleStack: ts.ClassDeclaration[],
   type: ts.Type,
-  moduleUnresolvedTypes: Map<ts.ClassDeclaration, Set<ts.Type>>,
+  recursionGuard: RecursionGuard,
 ): Generator<TypeResolution> {
   if (moduleStack.length === 0) {
     return;
   }
   const module = orThrow(moduleStack.at(-1));
-  if (!moduleUnresolvedTypes.has(module)) {
-    moduleUnresolvedTypes.set(module, new Set());
-  }
-  const unresolvedTypes = orThrow(moduleUnresolvedTypes.get(module));
-  if (unresolvedTypes.has(type)) {
-    return;
-  }
-  unresolvedTypes.add(type);
-  using _ = {
-    [Symbol.dispose]: () => {
-      unresolvedTypes.delete(type);
-      if (unresolvedTypes.size === 0) {
-        moduleUnresolvedTypes.delete(module);
-      }
-    },
-  };
-  yield* getProviderTypeResolutions(
-    typeChecker,
-    graph,
-    moduleStack,
-    type,
-    moduleUnresolvedTypes,
-  );
-  yield* getSetTypeResolutions(
-    typeChecker,
-    graph,
-    moduleStack,
-    type,
-    moduleUnresolvedTypes,
-  );
-  yield* getImportedTypeResolutions(
-    typeChecker,
-    graph,
-    moduleStack,
-    type,
-    moduleUnresolvedTypes,
-  );
-  const requiredTypes = orThrow(graph.moduleRequiredTypes.get(module));
-  if (requiredTypes.has(type)) {
+  yield* withRecursionGuard(module, type, recursionGuard, function* () {
+    yield* getProviderTypeResolutions(
+      typeChecker,
+      graph,
+      moduleStack,
+      type,
+      recursionGuard,
+      module,
+    );
+    yield* getSetTypeResolutions(
+      typeChecker,
+      graph,
+      moduleStack,
+      type,
+      recursionGuard,
+      module,
+    );
+    yield* getImportedTypeResolutions(
+      typeChecker,
+      graph,
+      moduleStack,
+      type,
+      recursionGuard,
+      module,
+    );
     yield* getParentTypeResolutions(
       typeChecker,
       graph,
       moduleStack,
       type,
-      moduleUnresolvedTypes,
+      recursionGuard,
+      module,
     );
+  });
+}
+
+type RecursionGuard = Map<ts.ClassDeclaration, Set<ts.Type>>;
+
+function* withRecursionGuard(
+  module: ts.ClassDeclaration,
+  type: ts.Type,
+  recursionGuard: RecursionGuard,
+  handler: () => Generator<TypeResolution>,
+): Generator<TypeResolution> {
+  if (!recursionGuard.has(module)) {
+    recursionGuard.set(module, new Set());
+  }
+  const pendingTypes = orThrow(recursionGuard.get(module));
+  if (pendingTypes.has(type)) {
+    return;
+  }
+  pendingTypes.add(type);
+  try {
+    yield* handler();
+  } finally {
+    pendingTypes.delete(type);
+    if (pendingTypes.size === 0) {
+      recursionGuard.delete(module);
+    }
   }
 }
 
@@ -205,9 +215,9 @@ function* getProviderTypeResolutions(
   graph: Graph,
   moduleStack: ts.ClassDeclaration[],
   type: ts.Type,
-  moduleUnresolvedTypes: Map<ts.ClassDeclaration, Set<ts.Type>>,
+  recursionGuard: RecursionGuard,
+  module: ts.ClassDeclaration,
 ): Generator<TypeResolution> {
-  const module = orThrow(moduleStack.at(-1));
   const providers = orThrow(graph.moduleProviders.get(module));
   const awaitedType = getAwaitedType(typeChecker, type);
   for (const provider of providers) {
@@ -229,7 +239,7 @@ function* getProviderTypeResolutions(
           graph,
           moduleStack,
           parameterType,
-          moduleUnresolvedTypes,
+          recursionGuard,
         ),
       );
       if (typeResolutions.length === 0) {
@@ -295,9 +305,9 @@ function* getSetTypeResolutions(
   graph: Graph,
   moduleStack: ts.ClassDeclaration[],
   type: ts.Type,
-  moduleUnresolvedTypes: Map<ts.ClassDeclaration, Set<ts.Type>>,
+  recursionGuard: RecursionGuard,
+  module: ts.ClassDeclaration,
 ): Generator<TypeResolution> {
-  const module = orThrow(moduleStack.at(-1));
   const typeSymbol = type.getSymbol();
   if (typeSymbol === undefined) {
     return;
@@ -324,7 +334,7 @@ function* getSetTypeResolutions(
       graph,
       moduleStack,
       typeArgument,
-      moduleUnresolvedTypes,
+      recursionGuard,
     ),
   );
   yield {
@@ -343,18 +353,18 @@ function* getImportedTypeResolutions(
   graph: Graph,
   moduleStack: ts.ClassDeclaration[],
   type: ts.Type,
-  moduleUnresolvedTypes: Map<ts.ClassDeclaration, Set<ts.Type>>,
+  recursionGuard: RecursionGuard,
+  module: ts.ClassDeclaration,
 ): Generator<TypeResolution> {
-  const module = orThrow(moduleStack.at(-1));
-  const incudedModules = orThrow(graph.moduleIncludedModules.get(module));
-  for (const includedModule of incudedModules) {
+  const includedModules = orThrow(graph.moduleIncludedModules.get(module));
+  for (const includedModule of includedModules) {
     moduleStack.push(includedModule);
     yield* getTypeResolutions(
       typeChecker,
       graph,
       moduleStack,
       type,
-      moduleUnresolvedTypes,
+      recursionGuard,
     );
     moduleStack.pop();
   }
@@ -365,16 +375,20 @@ function* getParentTypeResolutions(
   graph: Graph,
   moduleStack: ts.ClassDeclaration[],
   type: ts.Type,
-  moduleUnresolvedTypes: Map<ts.ClassDeclaration, Set<ts.Type>>,
+  recursionGuard: RecursionGuard,
+  module: ts.ClassDeclaration,
 ): Generator<TypeResolution> {
-  const module = orThrow(moduleStack.at(-1));
+  const requiredTypes = orThrow(graph.moduleRequiredTypes.get(module));
+  if (!requiredTypes.has(type)) {
+    return;
+  }
   moduleStack.pop();
   yield* getTypeResolutions(
     typeChecker,
     graph,
     moduleStack,
     type,
-    moduleUnresolvedTypes,
+    recursionGuard,
   );
   moduleStack.push(module);
 }

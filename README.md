@@ -10,7 +10,7 @@ npm add @ealmansi/jagger
 
 2. Configure prebuild script:
 
-```jsonc
+```json
 // package.json
 {
   "scripts": {

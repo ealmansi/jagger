@@ -1,1 +1,1 @@
-export { Jagger } from "./Jagger.js";
+export * as Jagger from "./Jagger.js";
