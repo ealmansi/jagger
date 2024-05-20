@@ -6,6 +6,7 @@ export interface Graph {
   components: ts.ClassDeclaration[];
   componentModule: Map<ts.ClassDeclaration, ts.ClassDeclaration>;
   componentResolvers: Map<ts.ClassDeclaration, ts.MethodDeclaration[]>;
+  sourceFileComponents: Map<ts.SourceFile, ts.ClassDeclaration[]>;
   resolverReturnType: Map<ts.MethodDeclaration, ts.Type>;
   modules: ts.ClassDeclaration[];
   moduleIncludedModules: Map<ts.ClassDeclaration, ts.ClassDeclaration[]>;
@@ -30,7 +31,6 @@ export interface Graph {
 
 export function buildGraph(program: ts.Program): Graph {
   const components = getComponents(program);
-  const modules = getModules(program);
   const componentModule = new Map<ts.ClassDeclaration, ts.ClassDeclaration>();
   const componentResolvers = new Map<
     ts.ClassDeclaration,
@@ -43,6 +43,14 @@ export function buildGraph(program: ts.Program): Graph {
       getComponentResolvers(program, component),
     );
   }
+  const sourceFileComponents = new Map<ts.SourceFile, ts.ClassDeclaration[]>();
+  for (const component of components) {
+    const sourceFile = component.getSourceFile();
+    if (!sourceFileComponents.has(sourceFile)) {
+      sourceFileComponents.set(sourceFile, []);
+    }
+    orThrow(sourceFileComponents.get(sourceFile)).push(component);
+  }
   const resolverReturnType = new Map<ts.MethodDeclaration, ts.Type>();
   for (const component of components) {
     const resolvers = componentResolvers.get(component);
@@ -54,6 +62,7 @@ export function buildGraph(program: ts.Program): Graph {
       );
     }
   }
+  const modules = getModules(program);
   const moduleIncludedModules = new Map<
     ts.ClassDeclaration,
     ts.ClassDeclaration[]
@@ -102,6 +111,7 @@ export function buildGraph(program: ts.Program): Graph {
     components,
     componentModule,
     componentResolvers,
+    sourceFileComponents,
     resolverReturnType,
     modules,
     moduleIncludedModules,

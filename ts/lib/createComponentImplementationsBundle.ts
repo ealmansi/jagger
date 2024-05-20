@@ -16,38 +16,43 @@ export function createComponentImplementationsBundle(
   const typeChecker = program.getTypeChecker();
   const graph = buildGraph(program);
   const resolution = buildResolution(typeChecker, graph);
+  const sourceFiles = Array.from(graph.sourceFileComponents.keys());
   return factory.createBundle(
-    graph.components.map((component) => {
-      return createComponentImplementationSourceFile(
+    sourceFiles.map((sourceFile) => {
+      return createComponentImplementationsSourceFile(
         graph,
         resolution,
-        component,
+        sourceFile,
       );
     }),
   );
 }
 
-function createComponentImplementationSourceFile(
+function createComponentImplementationsSourceFile(
   graph: Graph,
   resolution: Resolution,
-  component: ts.ClassDeclaration,
+  inputSourceFile: ts.SourceFile,
 ): ts.SourceFile {
   const factory = ts.factory;
-  const inputSourceFile = component.getSourceFile();
   const inputFileName = inputSourceFile.fileName;
   const outputFileName = path.join(
     path.dirname(inputFileName),
     "gen",
     path.basename(inputFileName),
   );
+  const components = orThrow(graph.sourceFileComponents.get(inputSourceFile));
   const outputSourceFile = factory.createSourceFile(
     [
-      ...createComponentImportDeclarations(
-        resolution,
-        component,
-        outputFileName,
-      ),
-      createComponentClassDeclaration(graph, resolution, component),
+      ...components.flatMap((component) => {
+        return createComponentImportDeclarations(
+          resolution,
+          component,
+          outputFileName,
+        );
+      }),
+      ...components.map((component) => {
+        return createComponentClassDeclaration(graph, resolution, component);
+      }),
     ],
     factory.createToken(ts.SyntaxKind.EndOfFileToken),
     ts.NodeFlags.None,
