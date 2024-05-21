@@ -31,22 +31,6 @@ export class Module extends Jagger.Module {
   provideEnum(): Color {
     return Color.Red;
   }
-  provideUnknown(x: any): unknown {
-    return x;
-  }
-  provideAny(): any {
-    return {};
-  }
-  provideVoid(): void {}
-  provideNull(): null {
-    return null;
-  }
-  provideUndefined(): undefined {
-    return undefined;
-  }
-  provideNever(): never {
-    throw new Error();
-  }
   provideObject(obj: { color: Color; x: number; y: number }): object {
     return obj;
   }
@@ -78,12 +62,6 @@ export abstract class Component extends Jagger.Component {
   abstract getArray(): number[];
   abstract getTuple(): [boolean, number, string];
   abstract getEnum(): Color;
-  abstract getUnknown(): unknown;
-  abstract getAny(): any;
-  abstract getVoid(): void;
-  abstract getNull(): null;
-  abstract getUndefined(): undefined;
-  abstract getNever(): never;
   abstract getObject(): object;
   abstract getObjectShape(): { color: Color; x: number; y: number };
   abstract getRecord(): Record<string, number>;

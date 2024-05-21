@@ -25,24 +25,6 @@ export class ComponentImpl extends Component {
     getEnum() {
         return this._Module_provideEnum();
     }
-    getUnknown() {
-        return this._Module_provideUnknown();
-    }
-    getAny() {
-        return this._Module_provideAny();
-    }
-    getVoid() {
-        return this._Module_provideVoid();
-    }
-    getNull() {
-        return this._Module_provideNull();
-    }
-    getUndefined() {
-        return this._Module_provideUndefined();
-    }
-    getNever() {
-        return this._Module_provideNever();
-    }
     getObject() {
         return this._Module_provideObject();
     }
@@ -83,24 +65,6 @@ export class ComponentImpl extends Component {
     }
     private _Module_provideEnum() {
         return this._Module.provideEnum();
-    }
-    private _Module_provideUnknown() {
-        return this._Module.provideUnknown(this._Module_provideAny());
-    }
-    private _Module_provideAny() {
-        return this._Module.provideAny();
-    }
-    private _Module_provideVoid() {
-        return this._Module.provideVoid();
-    }
-    private _Module_provideNull() {
-        return this._Module.provideNull();
-    }
-    private _Module_provideUndefined() {
-        return this._Module.provideUndefined();
-    }
-    private _Module_provideNever() {
-        return this._Module.provideNever();
     }
     private _Module_provideObject() {
         return this._Module.provideObject(this._Module_provideObjectShape());

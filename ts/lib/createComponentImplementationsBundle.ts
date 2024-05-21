@@ -346,6 +346,42 @@ function createComponentClassDeclaration(
                 ),
               ),
             ];
+          case "UndefinedTypeResolution":
+            return [
+              factory.createMethodDeclaration(
+                [factory.createToken(ts.SyntaxKind.PrivateKeyword)],
+                undefined,
+                factory.createIdentifier(typeResolutionName),
+                undefined,
+                undefined,
+                [],
+                undefined,
+                factory.createBlock(
+                  [
+                    factory.createReturnStatement(
+                      factory.createIdentifier("undefined"),
+                    ),
+                  ],
+                  true,
+                ),
+              ),
+            ];
+          case "NullTypeResolution":
+            return [
+              factory.createMethodDeclaration(
+                [factory.createToken(ts.SyntaxKind.PrivateKeyword)],
+                undefined,
+                factory.createIdentifier(typeResolutionName),
+                undefined,
+                undefined,
+                [],
+                undefined,
+                factory.createBlock(
+                  [factory.createReturnStatement(factory.createNull())],
+                  true,
+                ),
+              ),
+            ];
         }
       }),
     ],
@@ -364,6 +400,8 @@ function buildTypeResolutionName(
         typeResolution.provider.name.getText()
       );
     case "SetTypeResolution":
+    case "UndefinedTypeResolution":
+    case "NullTypeResolution":
       if (!syntheticTypeResolutionName.has(typeResolution)) {
         syntheticTypeResolutionName.set(
           typeResolution,

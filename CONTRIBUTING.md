@@ -2,8 +2,6 @@
 
 ## TODO
 
-- Reusable Providers
-- Optional Binding
 - CLI
   - Reject path without --project in bin/generate
   - Allow passing in directory path /a/b/c instead of /a/b/c/tsconfig.json

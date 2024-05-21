@@ -9,7 +9,11 @@ export interface Resolution {
   componentTypeResolutions: Map<ts.ClassDeclaration, TypeResolution[]>;
 }
 
-export type TypeResolution = ProviderTypeResolution | SetTypeResolution;
+export type TypeResolution =
+  | ProviderTypeResolution
+  | SetTypeResolution
+  | UndefinedTypeResolution
+  | NullTypeResolution;
 
 interface ProviderTypeResolution {
   kind: "ProviderTypeResolution";
@@ -25,6 +29,20 @@ interface SetTypeResolution {
   type: ts.Type;
   module: ts.ClassDeclaration;
   elementTypeResolutions: TypeResolution[];
+  requiresAsync: boolean;
+}
+
+interface UndefinedTypeResolution {
+  kind: "UndefinedTypeResolution";
+  type: ts.Type;
+  module: ts.ClassDeclaration;
+  requiresAsync: boolean;
+}
+
+interface NullTypeResolution {
+  kind: "NullTypeResolution";
+  type: ts.Type;
+  module: ts.ClassDeclaration;
   requiresAsync: boolean;
 }
 
@@ -220,13 +238,15 @@ function* getProviderTypeResolutions(
 ): Generator<TypeResolution> {
   const providers = orThrow(graph.moduleProviders.get(module));
   const awaitedType = getAwaitedType(typeChecker, type);
+  const nonNullableType = type.getNonNullableType();
   for (const provider of providers) {
     const returnType = orThrow(graph.providerReturnType.get(provider));
     const awaitedReturnType = getAwaitedType(typeChecker, returnType);
     if (
       !typesAreConsideredEqual(typeChecker, returnType, type) &&
       !typesAreConsideredEqual(typeChecker, returnType, awaitedType) &&
-      !typesAreConsideredEqual(typeChecker, awaitedReturnType, type)
+      !typesAreConsideredEqual(typeChecker, awaitedReturnType, type) &&
+      !typesAreConsideredEqual(typeChecker, returnType, nonNullableType)
     ) {
       continue;
     }
@@ -243,20 +263,46 @@ function* getProviderTypeResolutions(
         ),
       );
       if (typeResolutions.length === 0) {
-        console.log(
-          [
-            "could not satisfy ",
-            typeChecker.typeToString(parameterType),
-            " for ",
-            provider.name.getText(),
-            " in ",
-            orThrow(module.name).text,
-          ].join(""),
-        );
-        break;
+        if (
+          typeChecker.isTypeAssignableTo(
+            typeChecker.getUndefinedType(),
+            parameterType,
+          )
+        ) {
+          parameterTypeResolutions.push({
+            kind: "UndefinedTypeResolution",
+            type,
+            module,
+            requiresAsync: false,
+          });
+        } else if (
+          typeChecker.isTypeAssignableTo(
+            typeChecker.getNullType(),
+            parameterType,
+          )
+        ) {
+          parameterTypeResolutions.push({
+            kind: "NullTypeResolution",
+            type,
+            module,
+            requiresAsync: false,
+          });
+        } else {
+          console.log(
+            [
+              "could not satisfy ",
+              typeChecker.typeToString(parameterType),
+              " for ",
+              provider.name.getText(),
+              " in ",
+              orThrow(module.name).text,
+            ].join(""),
+          );
+        }
+      } else {
+        const typeResolution = orThrow(typeResolutions.at(0));
+        parameterTypeResolutions.push(typeResolution);
       }
-      const typeResolution = orThrow(typeResolutions.at(0));
-      parameterTypeResolutions.push(typeResolution);
     }
     if (parameterTypes.length !== parameterTypeResolutions.length) {
       continue;
@@ -504,7 +550,13 @@ function getTypeResolutionTypeResolutions(
 function getTypeResolutionChildTypeResolutions(
   typeResolution: TypeResolution,
 ): TypeResolution[] {
-  return typeResolution.kind === "ProviderTypeResolution"
-    ? typeResolution.parameterTypeResolutions
-    : typeResolution.elementTypeResolutions;
+  switch (typeResolution.kind) {
+    case "ProviderTypeResolution":
+      return typeResolution.parameterTypeResolutions;
+    case "SetTypeResolution":
+      return typeResolution.elementTypeResolutions;
+    case "UndefinedTypeResolution":
+    case "NullTypeResolution":
+      return [];
+  }
 }
