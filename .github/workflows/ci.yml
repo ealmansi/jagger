@@ -1,7 +1,7 @@
 on:
   push:
     branches:
-      - master
+      - main
 
 env:
   NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
