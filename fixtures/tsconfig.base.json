@@ -24,6 +24,5 @@
     "noPropertyAccessFromIndexSignature": true,
     "skipDefaultLibCheck": true,
     "skipLibCheck": true
-  },
-  "references": [{ "path": ".." }]
+  }
 }

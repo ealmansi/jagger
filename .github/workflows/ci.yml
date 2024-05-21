@@ -1,7 +1,7 @@
 on:
   push:
-    tags:
-      - "*"
+    branches:
+      - master
 
 env:
   NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
@@ -21,4 +21,3 @@ jobs:
       - run: npm run build
       - run: npm run typecheck-fixtures
       - run: npm run test
-      - run: npm publish
